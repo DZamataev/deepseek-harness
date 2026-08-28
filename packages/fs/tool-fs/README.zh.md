@@ -65,7 +65,7 @@ kind: "package-reference"
 
 ### 策略与沙箱行为
 
-挂载策略插件后，`write` 与 `edit` 从 `fs/*` 意图槽位取得防护，因此未读目标或陈旧观察会以 `FS_NOT_OBSERVED` 或 `FS_STALE_VERSION` 及恢复指令失败。使用施加沙箱限制的后端（`fs-sandbox`）时，`write`/`edit` 还会公开 `sandbox_permissions` 与 `justification`；被拒绝的变更返回 `[sandbox: file access denied under <mode> mode]` 标记与同轮次升级提示，获批的重试可以在该次调用中加盖严格更宽的模式。
+挂载策略插件后，`write` 与 `edit` 从 `fs/*` 意图槽位取得防护，因此未读目标或陈旧观察会以 `FS_NOT_OBSERVED` 或 `FS_STALE_VERSION` 及恢复指令失败。使用施加沙箱限制的后端（`fs-sandbox`）时，每个请求只在存在严格宽于该会话常驻策略的模式时公开 `sandbox_permissions` 与 `justification`；`danger-full-access` 会省略两个字段。被拒绝的变更返回 `[sandbox: file access denied under <mode> mode]` 标记与同轮次升级提示，获批的重试可以在该次调用中加盖严格更宽的模式。
 
 ### 失败与恢复
 
@@ -163,15 +163,15 @@ Use the edit tool for targeted changes to existing UTF-8 text files. It replaces
 
 #### 模型看到的内容
 
-模型会看到已生成的 [`read`、`read_image`、`write` 和 `edit` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-fs)，参数使用 snake_case。图片工具只在持久附件存储已挂载时出现；schema 本身与路由无关，严格门禁在执行时拒绝。作用域工具限制可以为某个 agent 移除任一定义。
+生成的 [`read`、`read_image`、`write` 和 `edit` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-fs)记录已注册回退，参数使用 snake_case。图片工具只在持久附件存储已挂载时出现；schema 本身与路由无关，严格门禁在执行时拒绝。使用施加限制的后端时，每个 agent 请求把 `write` 与 `edit` 的升权模式收窄到严格宽于会话当前策略的集合，不存在更宽模式时省略配对字段。作用域工具限制可以为某个 agent 移除任一定义。
 
 #### Token 影响
 
-该工具视图中的每个请求都支付固定 schema 成本。
+除工具可见性与沙箱策略变化外，该工具视图的 schema 成本固定；更窄策略会增加可用的变更升权字段。
 
 #### KV Cache 影响
 
-只要可见工具定义和顺序不变，前缀就保持稳定。注册生命周期或作用域限制可能从首个变化的 schema token 开始使复用失效。
+只要投影后的工具定义和顺序不变，前缀就保持稳定。注册生命周期、作用域限制或沙箱策略变化可能从首个变化的 schema token 开始使复用失效。
 
 ### 读取结果
 

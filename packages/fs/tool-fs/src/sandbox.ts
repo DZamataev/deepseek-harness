@@ -11,9 +11,9 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { ToolExecution } from '@deepseek-ai/dsh-tools'
+import type { ToolDefinition, ToolExecution } from '@deepseek-ai/dsh-tools'
 import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
-import { ESCALATION_TARGETS, approveEscalation, escalationHintMarker, sandboxDenialMarker, validateEscalationArgs } from '@deepseek-ai/dsh-sandbox'
+import { ESCALATION_TARGETS, WIDER_MODES, approveEscalation, escalationHintMarker, projectEscalationSchema, sandboxDenialMarker, validateEscalationArgs } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import { FsError } from '@deepseek-ai/dsh-fs'
 
@@ -70,6 +70,20 @@ export class FsSandboxController {
           + 'why this exact file operation needs the wider access.',
       },
     }
+  }
+
+  /**
+   * Limit one request's escalation parameters to modes wider than its current
+   * session policy; omit both fields when no wider mode exists.
+   * @param agent - agent whose request is being assembled.
+   * @param schema - registered model-facing fields, borrowed as readonly input.
+   * @returns description and request-specific parameters.
+   */
+  projectModelSchema: NonNullable<ToolDefinition['projectModelSchema']> = (agent, schema) => {
+    const requestModes = this.policy === undefined
+      ? []
+      : WIDER_MODES[this.policy.resolve({ session: agent.session }).mode] ?? []
+    return projectEscalationSchema(schema, requestModes)
   }
 
   /**

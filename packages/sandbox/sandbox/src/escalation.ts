@@ -17,13 +17,13 @@
  */
 
 import { assertNever } from '@deepseek-ai/dsh-llm'
+import type { ToolSchema } from '@deepseek-ai/dsh-llm'
 import type { SandboxMode } from './index.ts'
 
 /**
  * The strictly-wider table: what a call whose effective mode is the key may
- * escalate TO. Checked at EXECUTION, never baked into a tool schema — the
- * schema's enum is {@link ESCALATION_TARGETS}, because schemas are
- * registry-global while the effective mode is per-call truth.
+ * escalate to. Request assembly projects the matching targets for the current
+ * session, and execution independently enforces the same relation.
  */
 export const WIDER_MODES: Record<string, readonly SandboxMode[]> = {
   'read-only': ['workspace-write', 'danger-full-access'],
@@ -31,14 +31,41 @@ export const WIDER_MODES: Record<string, readonly SandboxMode[]> = {
 }
 
 /**
- * The closed escalation-target vocabulary — every mode a call could ever
- * escalate TO (`read-only` is the floor; nothing escalates to it). Advertised
- * whenever the mounted capability confines: cutting the enum down to the modes
- * wider than the composition's DEFAULT would strand a session whose effective
- * mode sits below it (a `danger-full-access` default would advertise nothing
- * while a narrower-switched session stays confined with no lever).
+ * The complete escalation-target set retained by each registered tool schema.
+ * Request assembly narrows it against logged session policy; the registered
+ * fallback keeps every target for execution validation and agentless catalogs.
  */
 export const ESCALATION_TARGETS: readonly SandboxMode[] = ['workspace-write', 'danger-full-access']
+
+/**
+ * Project escalation parameters for one request: retain only modes wider than
+ * its standing policy, or omit the paired fields when no widening exists.
+ * The registered schema remains unchanged for execution validation and
+ * agentless diagnostics.
+ * @param schema - registered model-facing fields, borrowed as readonly input.
+ * @param modes - targets strictly wider than the request's effective mode.
+ * @param description - request-specific tool description.
+ * @returns request-specific description and parameters.
+ */
+export function projectEscalationSchema(
+  schema: Readonly<ToolSchema>,
+  modes: readonly SandboxMode[],
+  description = schema.description,
+): Pick<ToolSchema, 'description' | 'parameters'> {
+  const parameters = structuredClone(schema.parameters) as {
+    properties?: Record<string, Record<string, unknown>>
+  }
+  const properties = parameters.properties
+  if (properties !== undefined) {
+    if (modes.length === 0) {
+      delete properties['sandbox_permissions']
+      delete properties['justification']
+    } else if (properties['sandbox_permissions'] !== undefined) {
+      properties['sandbox_permissions'].enum = [...modes]
+    }
+  }
+  return { description, parameters }
+}
 
 /**
  * Validate the escalation argument pairing a tool schema cannot express:

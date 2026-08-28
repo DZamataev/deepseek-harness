@@ -1,7 +1,8 @@
 /** Unified JSON-value schema DSL, inference, compilation, and typed tool helper. @module dsh-tools/schema */
 
 import { HarnessError } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, ToolSchema } from '@deepseek-ai/dsh-llm'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
 import type { ToolDefinition, ToolExecution, ToolExecutionResult, ToolRunContext, ToolResult } from './index.ts'
 import { assertSupportedJsonSchema, isJsonSchemaRecord, isPlainJsonArray, JsonSchemaError, validateJsonSchemaValue } from './json-schema.ts'
@@ -499,6 +500,15 @@ export interface DefineToolOptions<S extends ParameterSchemaSpec, O extends Valu
   /** Optional positive cooperative timeout budget in milliseconds. */
   readonly timeoutMs?: number
   /**
+   * Project request-time model fields from the registered schema and current
+   * agent while the registered parameters continue to validate execution.
+   * Projected parameters must not admit an input those parameters reject.
+   * @param agent - agent whose request is being assembled.
+   * @param schema - registered model-facing fields, borrowed as readonly input.
+   * @returns description and parameters for this request.
+   */
+  projectModelSchema?(agent: Agent, schema: Readonly<ToolSchema>): Pick<ToolSchema, 'description' | 'parameters'>
+  /**
    * Pure classifier for sibling overlap.
    * @param args - typed validated arguments.
    * @returns Whether the call may join a parallel group.
@@ -560,6 +570,8 @@ export function defineTool<const S extends ParameterSchemaSpec, const O extends 
   const userPresentResult = options.presentResult
   // oxlint-disable-next-line typescript/unbound-method
   const userIsConcurrencySafe = options.isConcurrencySafe
+  // oxlint-disable-next-line typescript/unbound-method
+  const userProjectModelSchema = options.projectModelSchema
   if (options.timeoutMs !== undefined && (!Number.isFinite(options.timeoutMs) || options.timeoutMs <= 0)) {
     throw new Error(`defineTool(${options.name}): timeoutMs must be a positive finite number`)
   }
@@ -582,6 +594,7 @@ export function defineTool<const S extends ParameterSchemaSpec, const O extends 
       } : {},
     },
     ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+    ...(userProjectModelSchema !== undefined ? { projectModelSchema: userProjectModelSchema } : {}),
     async execute(args: unknown, exec: ToolRunContext): Promise<JsonValue> {
       const violations = validate(args)
       if (violations.length > 0) throw new ToolArgsError(violations)

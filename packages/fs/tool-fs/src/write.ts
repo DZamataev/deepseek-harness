@@ -74,6 +74,7 @@ export function applyWriteTool(ctx: Context, sandbox: FsSandboxController): void
       content: { type: 'string', required: true, description: 'Full UTF-8 text content to write.' },
       ...sandbox.escalationModes.length > 0 ? sandbox.schemaFields() : {},
     },
+    projectModelSchema: sandbox.projectModelSchema,
     output: {
       schema: {
         type: 'object',

@@ -7,7 +7,7 @@ header:
   class: image-compaction
   pin: true
   systemPromptSource: session/read-image
-  toolSchemasSource: escalation-approved
+  toolSchemasSource: session/text-turn
 permission: danger-full-access
 input:
   attachments:

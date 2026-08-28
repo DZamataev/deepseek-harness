@@ -97,7 +97,7 @@ This section explains the design decisions behind the contract and points at the
 
 ### Escalation choreography
 
-The ladder is a closed table — `read-only` may escalate to `workspace-write` or `danger-full-access`, `workspace-write` only to `danger-full-access` — checked at execution, never baked into a tool schema, whose enum stays the closed target vocabulary. [`approveEscalation`](src/escalation.ts) validates the `sandbox_permissions`/`justification` pairing, rejects non-widening requests without prompting a human, and maps every approval outcome to its own error before anything executes.
+The ladder is a closed table — `read-only` may escalate to `workspace-write` or `danger-full-access`, `workspace-write` only to `danger-full-access`. `projectEscalationSchema` projects that request's wider subset into the paired model fields, while [`approveEscalation`](src/escalation.ts) independently enforces strict widening, validates the pairing, rejects non-widening requests without prompting a human, and maps every approval outcome to its own error before anything executes.
 
 ### Writable roots
 

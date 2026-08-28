@@ -55,7 +55,7 @@ kind: "package-reference"
 
 ### Windows 特有的沙箱行为
 
-在沙箱执行器下，被拒绝的命令会报告 `[sandbox: file access denied under <mode> mode]`，并适用相同的单次升权路径：用 `sandbox_permissions` 加一句 `justification`，经用户审批后重试完全相同的命令一次。工具还会在其描述中教授两条 Windows 受限令牌约定：只读 pwsh 运行在 ConstrainedLanguage 中（`.NET` 静态调用、`Add-Type`、COM 与反射会以 "only core types" 错误失败）；两种受限模式下程序都无法打开命名管道，因此通过管道 stdio 捕获另一程序输出的命令会以 EPERM 失败——请升权该确切命令一次，或重构命令以避免捕获输出。
+在沙箱执行器下，被拒绝的命令会报告 `[sandbox: file access denied under <mode> mode]`，并适用相同的单次升权路径：用 `sandbox_permissions` 加一句 `justification`，经用户审批后重试完全相同的命令一次。每个请求只公布严格宽于该会话常驻策略的模式，并在 `danger-full-access` 下省略两个字段。约束模式生效时，工具还会在其描述中教授两条 Windows 受限令牌约定：只读 pwsh 运行在 ConstrainedLanguage 中（`.NET` 静态调用、`Add-Type`、COM 与反射会以 "only core types" 错误失败）；程序无法打开命名管道，因此通过管道 stdio 捕获另一程序输出的命令会以 EPERM 失败——请升权该确切命令一次，或重构命令以避免捕获输出。
 
 ### 可能出什么问题
 
@@ -138,15 +138,15 @@ Non-zero exits are reported as `[exit code: N]` markers; investigate failures be
 
 #### 模型看到什么
 
-模型会看到生成的 [`pwsh` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-pwsh)。按 agent（智能体）scope 限制工具可以移除该 agent 的定义。
+生成的 [`pwsh` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-pwsh)记录已注册回退。使用沙箱执行器时，每个 agent 请求只枚举严格宽于会话当前策略的模式，不存在更宽模式时省略配对升权字段与约束模式描述条款。按 agent（智能体）scope 限制工具可以移除该 agent 的定义。
 
 #### Token 影响
 
-工具可见的每个请求都会产生固定 schema 开销。
+除沙箱策略变化外，工具可见请求的 schema 开销固定；更窄策略会增加可用升权字段与约束模式条款。
 
 #### KV Cache 影响
 
-只要可见性与工具定义不变，前缀就保持稳定。限制或配置变化可能从首个变化的 token 开始使复用失效。
+只要可见性、配置与当前沙箱策略不变，前缀就保持稳定。限制、配置或策略变化可能从首个变化的 token 开始使复用失效。
 
 ### 前台结果
 

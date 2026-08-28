@@ -829,8 +829,11 @@ describe('sandbox escalation API (write/edit)', () => {
   it('advertises no escalation fields under a non-confining backend', async () => {
     const { ctx } = await setup()
     expect(ctx.fs.sandboxMode).toBeUndefined()
+    const agent = escalationAgent() as never
+    const assembly = await ctx.systemPrompt.assemble({ agent, scope: agent })
     for (const name of ['write', 'edit'] as const) {
-      const props = fsSchema(ctx, name).parameters.properties
+      const schema = assembly.tools.find(item => item.name === name)!
+      const props = schema.parameters.properties as Record<string, unknown>
       expect(props['sandbox_permissions']).toBeUndefined()
       expect(props['justification']).toBeUndefined()
     }
@@ -842,6 +845,29 @@ describe('sandbox escalation API (write/edit)', () => {
       const props = fsSchema(ctx, name).parameters.properties
       expect(props['sandbox_permissions']?.enum).toEqual(['workspace-write', 'danger-full-access'])
       expect(props['justification']).toBeDefined()
+    }
+  })
+
+  it.each([
+    ['read-only', ['workspace-write', 'danger-full-access']],
+    ['workspace-write', ['danger-full-access']],
+    ['danger-full-access', []],
+  ] as const)('advertises only escalation modes wider than the current %s policy', async (mode, expectedModes) => {
+    const { ctx } = await setupConfining()
+    const events = [{ type: 'sandbox/mode', data: { mode } }]
+    const agent = escalationAgent(events) as never
+    const assembly = await ctx.systemPrompt.assemble({ agent, scope: agent })
+
+    for (const name of ['write', 'edit'] as const) {
+      const schema = assembly.tools.find(item => item.name === name)!
+      const properties = schema.parameters.properties as Record<string, { enum?: string[] }>
+      if (expectedModes.length === 0) {
+        expect(properties).not.toHaveProperty('sandbox_permissions')
+        expect(properties).not.toHaveProperty('justification')
+      } else {
+        expect(properties['sandbox_permissions']?.enum).toEqual(expectedModes)
+        expect(properties).toHaveProperty('justification')
+      }
     }
   })
 

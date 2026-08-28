@@ -609,6 +609,28 @@ describe('sandbox escalation through the generic task producer', () => {
     }
   })
 
+  it.each([
+    ['read-only', ['workspace-write', 'danger-full-access']],
+    ['workspace-write', ['danger-full-access']],
+    ['danger-full-access', []],
+  ] as const)('advertises only escalation modes wider than the current %s policy', async (mode, expectedModes) => {
+    const { ctx } = await setupSandboxed()
+    const agent = sandboxAgent(mode)
+    const assembly = await ctx.systemPrompt.assemble({ agent, scope: agent })
+    const schema = assembly.tools.find(item => item.name === 'bash')!
+    const properties = schema.parameters.properties as Record<string, { enum?: string[] }>
+
+    if (expectedModes.length === 0) {
+      expect(properties).not.toHaveProperty('sandbox_permissions')
+      expect(properties).not.toHaveProperty('justification')
+      expect(schema.description).not.toContain('sandbox_permissions')
+    } else {
+      expect(properties['sandbox_permissions']?.enum).toEqual(expectedModes)
+      expect(properties).toHaveProperty('justification')
+      expect(schema.description).toContain('sandbox_permissions')
+    }
+  })
+
   it('rejects injected escalation without a sandbox and non-widening escalation without prompting', async () => {
     const plain = await setup()
     expect(text(await call(plain, 'bash', escalate))).toContain('not available in this composition')

@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 注册工具
 
-`defineTool` 构建类型化工具定义：面向模型的名称、描述与参数 schema、规范输出声明，以及只返回所声明 JSON 值的 `execute` 主体。模型参数在执行前被校验；无效输入变成普通错误结果。
+`defineTool` 构建类型化工具定义：面向模型的名称、描述与参数 schema、规范输出声明，以及只返回所声明 JSON 值的 `execute` 主体。模型参数在执行前被校验；无效输入变成普通错误结果。可用参数依赖已记录 agent 状态的工具可以提供 `projectModelSchema`；注册表会为该请求把同步投影应用到原生 Function Calling schema 与生成的 PTC SDK 绑定，同时仍以已注册参数 schema 校验执行。投影可以收窄参数，但不得接受该校验器会拒绝的参数对象。
 
 ```ts
 import { readFile } from 'node:fs/promises'
@@ -100,7 +100,7 @@ ctx.tools.register(defineTool({
 
 ### 设计理念
 
-注册表在作用域层中持有类型化 `ToolDefinition`，并在请求时把它们投影为面向模型的 `ToolSchema` 集合——`output`、`execute`、`finalizeContent`、`timeoutMs` 与呈现回调绝不会泄漏到协议上。每次调用都运行一条固定流水线：`tools/pre-execute`（可扩展的允许／拒绝／询问）→ 已注册单调守卫 → `tools/execute`（环绕分发包装层）→ `tools/post-execute`（检查／替换、附加上下文）→ 由定义持有的 `finalizeContent` → 仅观测的 `tools/result` 事件。只有 `tools/execute` 视图可以替换必填信号，注册表会在调用主体前重新融合调用方信号。
+注册表在作用域层中持有类型化 `ToolDefinition`，并在请求时把它们投影为面向模型的 `ToolSchema` 集合。定义的可选 `projectModelSchema` 回调从可重建的 agent 状态派生请求专属描述与参数；`output`、`execute`、`projectModelSchema`、`finalizeContent`、`timeoutMs` 与呈现回调绝不会泄漏到协议上。每次调用都运行一条固定流水线：`tools/pre-execute`（可扩展的允许／拒绝／询问）→ 已注册单调守卫 → `tools/execute`（环绕分发包装层）→ `tools/post-execute`（检查／替换、附加上下文）→ 由定义持有的 `finalizeContent` → 仅观测的 `tools/result` 事件。只有 `tools/execute` 视图可以替换必填信号，注册表会在调用主体前重新融合调用方信号。
 
 ### 源码地图
 
@@ -154,21 +154,21 @@ ctx.tools.register(defineTool({
 
 #### 模型看到什么
 
-在普通模式下，模型会看到每个可见定义的确切名称、描述与 JSON Schema；已交付定义记录在生成的[工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tools)中。agent 作用域的限制、遮蔽与扩展注册会改变该 agent 的最终工具集合。
+在普通模式下，模型会看到每个可见定义的名称，以及经过请求时 `projectModelSchema` 回调后的描述与 JSON Schema；生成的[工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tools)记录无 agent 时的已注册回退。agent 作用域的限制、遮蔽、扩展注册与请求时投影会改变该 agent 的最终工具集合或字段。
 
 #### Token 影响
 
-每次请求的固定成本与可见定义成正比。隐藏工具的限制会为该 agent 移除其全部 schema 成本。
+每次请求的成本与投影后的可见定义成正比。隐藏工具的限制会移除其全部 schema 成本；投影可移除当前 agent 无法使用的字段。
 
 #### KV Cache 影响
 
-只要可见定义及其顺序不变，前缀就保持稳定。注册、dispose 或作用域限制可能从第一个改变的 schema token 起使复用失效。
+只要投影后的定义及其顺序不变，前缀就保持稳定。注册、dispose、作用域限制或驱动投影的状态可能从第一个改变的 schema token 起使复用失效。
 
 ### PTC mode schema 与系统提示词
 
 #### 模型看到什么
 
-PTC mode 会公开生成的 [`run_code` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tools)、下方 SDK 说明，以及按所加载运行时语言生成的精确 SDK 块。TypeScript 说明会把生成声明明确标为只能在程序内使用的绑定。当当前 `bash` 参数 schema 接受示例参数时，说明还会给出以 `run_code` 包住 `tools.bash(...)` 的完整调用。`tools:sdk` 段使用 first-party 顺序 5000。`both` 会同时公开普通 schema 与此 PTC mode API；在 `ptc` 下，提示词还会带上处于更早 first-party 顺序的 `tools:ptc-only` 规则，让模型先读到「可以调用哪些工具」再读「每个工具做什么」。
+PTC mode 会公开生成的 [`run_code` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tools)、下方 SDK 说明，以及按所加载运行时语言从请求时投影工具 schema 生成的精确 SDK 块。TypeScript 说明会把生成声明明确标为只能在程序内使用的绑定。当当前 `bash` 参数 schema 接受示例参数时，说明还会给出以 `run_code` 包住 `tools.bash(...)` 的完整调用。`tools:sdk` 段使用 first-party 顺序 5000。`both` 会同时公开普通 schema 与此 PTC mode API；在 `ptc` 下，提示词还会带上处于更早 first-party 顺序的 `tools:ptc-only` 规则，让模型先读到「可以调用哪些工具」再读「每个工具做什么」。
 
 ##### 带 bash 的 TypeScript PTC mode SDK 说明
 

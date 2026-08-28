@@ -12,6 +12,7 @@ import {
   WIDER_MODES,
   approveEscalation,
   escalationHintMarker,
+  projectEscalationSchema,
   sandboxDenialMarker,
   validateEscalationArgs,
 } from '@deepseek-ai/dsh-sandbox'
@@ -26,6 +27,36 @@ describe('the strictly-wider ladder', () => {
 
   it('the target enum is the closed set every session could escalate TO (read-only is the floor)', () => {
     expect(ESCALATION_TARGETS).toEqual(['workspace-write', 'danger-full-access'])
+  })
+})
+
+describe('request-time escalation schema projection', () => {
+  it('leaves schemas without escalation properties intact', () => {
+    const withoutProperties = {
+      name: 'empty',
+      description: 'Empty.',
+      parameters: { type: 'object' },
+    } as const
+    const ordinary = {
+      name: 'ordinary',
+      description: 'Ordinary.',
+      parameters: {
+        type: 'object',
+        properties: { value: { type: 'string' } },
+      },
+    } as const
+
+    expect(projectEscalationSchema(withoutProperties, ['danger-full-access'])).toEqual({
+      description: 'Empty.',
+      parameters: { type: 'object' },
+    })
+    expect(projectEscalationSchema(ordinary, ['danger-full-access'])).toEqual({
+      description: 'Ordinary.',
+      parameters: {
+        type: 'object',
+        properties: { value: { type: 'string' } },
+      },
+    })
   })
 })
 

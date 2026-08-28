@@ -90,6 +90,7 @@ export function applyEditTool(ctx: Context, sandbox: FsSandboxController): void 
       replace_all: { type: 'boolean', description: 'Replace all matches. Defaults to false; when false, old_string must appear exactly once.' },
       ...sandbox.escalationModes.length > 0 ? sandbox.schemaFields() : {},
     },
+    projectModelSchema: sandbox.projectModelSchema,
     output: {
       schema: {
         type: 'object',

@@ -572,9 +572,33 @@ describe('sandbox escalation through ctx.approval', () => {
     }
   })
 
+  it.each([
+    ['read-only', ['workspace-write', 'danger-full-access']],
+    ['workspace-write', ['danger-full-access']],
+    ['danger-full-access', []],
+  ] as const)('advertises only escalation modes wider than the current %s policy', async (mode, expectedModes) => {
+    const { ctx } = await setupSandboxed()
+    const agent = sandboxAgent(mode)
+    const assembly = await ctx.systemPrompt.assemble({ agent, scope: agent })
+    const schema = assembly.tools.find(item => item.name === 'pwsh')!
+    const properties = schema.parameters.properties as Record<string, { enum?: string[] }>
+
+    if (expectedModes.length === 0) {
+      expect(properties).not.toHaveProperty('sandbox_permissions')
+      expect(properties).not.toHaveProperty('justification')
+      expect(schema.description).not.toContain('sandbox_permissions')
+    } else {
+      expect(properties['sandbox_permissions']?.enum).toEqual(expectedModes)
+      expect(properties).toHaveProperty('justification')
+      expect(schema.description).toContain('sandbox_permissions')
+    }
+  })
+
   it('the escalation fields and the confined-mode clauses stay out of sandbox-less compositions', async () => {
     const { ctx } = await setup()
-    const schema = ctx.tools.schemas().find(item => item.name === 'pwsh')!
+    const agent = sandboxAgent('danger-full-access')
+    const assembly = await ctx.systemPrompt.assemble({ agent, scope: agent })
+    const schema = assembly.tools.find(item => item.name === 'pwsh')!
     expect(schema.description).not.toContain('ConstrainedLanguage')
     expect(schema.description).not.toContain('named pipes')
     expect(schema.description).not.toContain('sandbox_permissions')

@@ -59,7 +59,7 @@ Passing `run_in_background: true` returns a job id immediately and no timeout ap
 
 ### Sandboxed execution and escalation
 
-When the mounted executor confines commands (for example `dsh-bash-sandbox`), a blocked file operation is reported as `[sandbox: file access denied under <mode> mode]` — a policy denial, not a command failure. The model may then retry the exact same command once in the same turn with `sandbox_permissions` (the narrowest wider mode that suffices) and a one-sentence `justification`; the approval prompt raised by that retry is how the user consents. Escalation is never speculative: a request with no real prior denial, or one that is not strictly wider than the current mode, fails closed without running anything, and a rejected escalation is final for that command.
+When the mounted executor confines commands (for example `dsh-bash-sandbox`), a blocked file operation is reported as `[sandbox: file access denied under <mode> mode]` — a policy denial, not a command failure. The model may then retry the exact same command once in the same turn with `sandbox_permissions` (the narrowest wider mode that suffices) and a one-sentence `justification`; the approval prompt raised by that retry is how the user consents. Each request advertises only modes wider than that session's standing policy, and omits both escalation fields at `danger-full-access`. Escalation is never speculative: an injected request with no real prior denial, or one that is not strictly wider than the current mode, fails closed without running anything, and a rejected escalation is final for that command.
 
 ### What can go wrong
 
@@ -146,15 +146,15 @@ Prefix-stable while the registration scope and prompt text are unchanged. Plugin
 
 #### What the model sees
 
-The model sees the generated [`bash` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-bash). `run_in_background` appears only when this producer enables it; `sandbox_permissions` and `justification` appear only when the mounted executor advertises sandboxing. Agent-scoped tool restrictions can remove the definition for that agent.
+The generated [`bash` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-bash) records the registered fallback. In each agent request, `run_in_background` appears only when this producer enables it; under a sandboxing executor, `sandbox_permissions` enumerates only modes wider than the session's current policy and the paired fields disappear when none exists. Agent-scoped tool restrictions can remove the definition for that agent.
 
 #### Token effect
 
-Fixed schema cost on every request where the tools are visible; sandbox support adds the escalation fields and its conditional description paragraph.
+Schema cost is fixed outside sandbox policy changes; narrower policies add the available escalation fields and their conditional description paragraph.
 
 #### KV Cache effect
 
-Prefix-stable while visibility, background support, and executor sandbox capabilities are unchanged. A restriction, config change, or executor change may invalidate reuse from the first changed tool definition.
+Prefix-stable while visibility, background support, and the current sandbox policy are unchanged. A restriction, config, executor, or policy change may invalidate reuse from the first changed tool definition.
 
 ### Foreground result
 

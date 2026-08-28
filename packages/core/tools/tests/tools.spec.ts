@@ -72,6 +72,38 @@ describe('ToolRuntime', () => {
     expect(schema.execute).toBeUndefined()
   })
 
+  it('projects request-time schema fields from the current agent without changing the registry schema', async () => {
+    const ctx = await setup()
+    const agent = {} as Agent
+    ctx.tools.register(defineTool({
+      name: 'contextual',
+      description: 'static description',
+      parameters: { broad: { type: 'string' }, narrow: { type: 'string' } },
+      projectModelSchema: (_agent, schema) => ({
+        description: 'request description',
+        parameters: {
+          ...schema.parameters,
+          properties: { narrow: { type: 'string' } },
+        },
+      }),
+      output: {
+        schema: { type: 'string' },
+        render: (_args, value) => [{ type: 'text', text: value }],
+      },
+      async execute() { return 'ok' },
+    }))
+
+    const registered = ctx.tools.schemas().find(schema => schema.name === 'contextual')!
+    expect(registered.description).toBe('static description')
+    expect(registered.parameters.properties).toHaveProperty('broad')
+
+    const assembly = await ctx.systemPrompt.assemble({ agent, scope: agent })
+    const projected = assembly.tools.find(schema => schema.name === 'contextual')!
+    expect(projected.description).toBe('request description')
+    expect(projected.parameters.properties).toEqual({ narrow: { type: 'string' } })
+    expect(projected).not.toHaveProperty('projectModelSchema')
+  })
+
   it('schemas() excludes timeoutMs — the budget must never reach the model', async () => {
     const ctx = await setup()
     ctx.tools.register(defineContentToolFixture({

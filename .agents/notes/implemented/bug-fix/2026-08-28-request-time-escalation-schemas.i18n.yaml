@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-28-request-time-escalation-schemas.md
+2026-08-28-request-time-escalation-schemas.md: 9ad3e0449f64076315d99b6e9b8d4b6067f67e08
+2026-08-28-request-time-escalation-schemas.zh.md: 9a05552b158af1cb5b8de1270a1204954bc27cff

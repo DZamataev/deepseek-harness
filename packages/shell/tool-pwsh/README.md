@@ -55,7 +55,7 @@ The tool executes `pwsh -Command <command>` and returns the combined output. Com
 
 ### Windows-specific sandbox behavior
 
-Under a sandboxing executor, denied commands report `[sandbox: file access denied under <mode> mode]`, and the same one-shot escalation path applies: retry the exact command once with `sandbox_permissions` plus a `justification` through user approval. The tool also teaches two Windows-restricted-token contracts in its description: read-only pwsh runs in ConstrainedLanguage (`.NET` static calls, `Add-Type`, COM, and reflection fail with "only core types" errors), and in both confined modes programs cannot open named pipes, so a command that captures another program's output through piped stdio fails with EPERM — escalate the exact command once or restructure it to avoid capturing output.
+Under a sandboxing executor, denied commands report `[sandbox: file access denied under <mode> mode]`, and the same one-shot escalation path applies: retry the exact command once with `sandbox_permissions` plus a `justification` through user approval. Each request advertises only modes wider than that session's standing policy and omits both fields at `danger-full-access`. The tool also teaches two Windows-restricted-token contracts in its description while a confined mode is active: read-only pwsh runs in ConstrainedLanguage (`.NET` static calls, `Add-Type`, COM, and reflection fail with "only core types" errors), and programs cannot open named pipes, so a command that captures another program's output through piped stdio fails with EPERM — escalate the exact command once or restructure it to avoid capturing output.
 
 ### What can go wrong
 
@@ -138,15 +138,15 @@ Prefix-stable while the registration scope and prompt text are unchanged. Plugin
 
 #### What the model sees
 
-The model sees the generated [`pwsh` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-pwsh). Agent-scoped tool restrictions can remove the definition for that agent.
+The generated [`pwsh` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-pwsh) records the registered fallback. Under a sandboxing executor, each agent request enumerates only modes wider than the session's current policy and omits the paired escalation fields and confined-mode description clauses when no wider mode exists. Agent-scoped tool restrictions can remove the definition for that agent.
 
 #### Token effect
 
-Fixed schema cost on every request where the tool is visible.
+Schema cost is fixed outside sandbox policy changes; narrower policies add the available escalation fields and confined-mode clauses.
 
 #### KV Cache effect
 
-Prefix-stable while visibility and the tool definition are unchanged. A restriction or config change may invalidate reuse from the first changed token.
+Prefix-stable while visibility, configuration, and the current sandbox policy are unchanged. A restriction, config, or policy change may invalidate reuse from the first changed token.
 
 ### Foreground result
 

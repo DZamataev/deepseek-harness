@@ -20,7 +20,7 @@ import type {} from '@deepseek-ai/dsh-jobs'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type {} from '@deepseek-ai/dsh-shell-env'
 import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
-import { ESCALATION_TARGETS, approveEscalation, canonicalPath, validateEscalationArgs } from '@deepseek-ai/dsh-sandbox'
+import { ESCALATION_TARGETS, WIDER_MODES, approveEscalation, canonicalPath, projectEscalationSchema, validateEscalationArgs } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import { DSH_ENV_PREFIX } from '@deepseek-ai/dsh-shell'
 import type { ShellRunResult } from '@deepseek-ai/dsh-shell'
@@ -198,7 +198,6 @@ export function apply(ctx: Context, config: Config = {}): void {
   /** Resolve the complete standing policy for this call when a confining executor is mounted. */
   const resolveSandboxPolicy = (exec: ToolExecution): SandboxExecutionPolicy | undefined =>
     sandboxPolicy?.resolve(exec.agent === undefined ? {} : { session: exec.agent.session })
-
   /**
    * Resolve a sandbox-escalation request through `ctx.approval` BEFORE
    * anything executes, delegating the shared fail-closed sequence (strict
@@ -267,6 +266,12 @@ export function apply(ctx: Context, config: Config = {}): void {
           description: 'Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access.',
         },
       } : {},
+    },
+    projectModelSchema: (agent, schema) => {
+      const requestModes = sandboxPolicy === undefined
+        ? []
+        : WIDER_MODES[sandboxPolicy.resolve({ session: agent.session }).mode] ?? []
+      return projectEscalationSchema(schema, requestModes, bashDescription(backgroundEnabled, requestModes))
     },
     output: {
       schema: {

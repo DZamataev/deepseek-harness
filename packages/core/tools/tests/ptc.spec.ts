@@ -136,6 +136,32 @@ describe('mode-aware wire contribution', () => {
     expect(sdk?.text).not.toContain('tools.bash(')
   })
 
+  it("mode 'ptc' generates the SDK from request-time schema projections", async () => {
+    const { ctx, systemPrompt } = await setup({ mode: 'ptc' })
+    const agent = {} as Agent
+    ctx.tools.register(defineTool({
+      name: 'contextual',
+      description: 'Static description.',
+      parameters: { broad: { type: 'string' }, narrow: { type: 'string' } },
+      projectModelSchema: (_agent, schema) => ({
+        description: 'Request description.',
+        parameters: { ...schema.parameters, properties: { narrow: { type: 'string' } } },
+      }),
+      output: {
+        schema: { type: 'string' },
+        render: (_args, value) => [{ type: 'text', text: value }],
+      },
+      async execute() { return 'ok' },
+    }))
+
+    const assembly = await systemPrompt.assemble({ agent, scope: agent })
+    const sdk = assembly.sections.find(section => section.name === 'tools:sdk')?.text
+    expect(sdk).toContain('Request description.')
+    expect(sdk).toContain('narrow?: string')
+    expect(sdk).not.toContain('broad?: string')
+    expect(sdk).not.toContain('Static description.')
+  })
+
   it("mode 'ptc' states the run_code-only rule BEFORE the per-tool guidance that names each tool", async () => {
     const { ctx, systemPrompt } = await setup({ mode: 'ptc' })
     registerEcho(ctx)

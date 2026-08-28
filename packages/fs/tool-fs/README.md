@@ -65,7 +65,7 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 ### Policy and sandbox behavior
 
-With the policy plugin mounted, `write` and `edit` obtain their guard from the `fs/*` intent slots, so an unread target or a stale observation fails with `FS_NOT_OBSERVED` or `FS_STALE_VERSION` and a recovery instruction. Under a confining backend (`fs-sandbox`), `write`/`edit` additionally advertise `sandbox_permissions` and `justification`; a denied mutation returns the `[sandbox: file access denied under <mode> mode]` marker with the same-turn escalation hint, and an approved retry may stamp a strictly wider mode for that one call.
+With the policy plugin mounted, `write` and `edit` obtain their guard from the `fs/*` intent slots, so an unread target or a stale observation fails with `FS_NOT_OBSERVED` or `FS_STALE_VERSION` and a recovery instruction. Under a confining backend (`fs-sandbox`), each request advertises `sandbox_permissions` and `justification` only when a mode wider than that session's standing policy exists; `danger-full-access` omits both fields. A denied mutation returns the `[sandbox: file access denied under <mode> mode]` marker with the same-turn escalation hint, and an approved retry may stamp a strictly wider mode for that one call.
 
 ### Failures and recovery
 
@@ -163,15 +163,15 @@ Prefix-stable while the plugin scope and guidance text are unchanged. Tool restr
 
 #### What the model sees
 
-The model sees the generated [`read`, `read_image`, `write`, and `edit` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-fs), with snake_case arguments. The image tool appears only while a durable attachment store is mounted; its schema is route-independent, and the strict gate refuses at execution. Scoped tool restrictions can remove any definition for one agent.
+The generated [`read`, `read_image`, `write`, and `edit` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-fs) record the registered fallbacks, with snake_case arguments. The image tool appears only while a durable attachment store is mounted; its schema is route-independent, and the strict gate refuses at execution. Under a confining backend, each agent request narrows `write` and `edit` escalation modes to those wider than the session's current policy and omits the paired fields when none exists. Scoped tool restrictions can remove any definition for one agent.
 
 #### Token effect
 
-Fixed schema cost on every request in that tool view.
+Schema cost is fixed outside tool visibility and sandbox policy changes; narrower policies add the available mutation-escalation fields.
 
 #### KV Cache effect
 
-Prefix-stable while the visible tool definitions and order are unchanged. Registration lifecycle or scoped restrictions may invalidate reuse from the first changed schema token.
+Prefix-stable while the projected tool definitions and order are unchanged. Registration lifecycle, scoped restrictions, or sandbox policy changes may invalidate reuse from the first changed schema token.
 
 ### Read result
 

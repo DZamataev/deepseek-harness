@@ -8,7 +8,7 @@ Source: [`packages/core/tools/src/index.ts`](../../packages/core/tools/src/index
 
 ## `ToolDefinition` — a registered tool
 
-A `ToolSchema` (the model-facing fields) plus a mandatory canonical output declaration, the `execute` function, host-only scheduler metadata, an optional final-content callback, and optional UI presenters. The registry holds these; the loop dispatches calls through them. The registry's `schemas()` builds the model-facing `ToolSchema[]` by an explicit allowlist — `output`/`execute`/`finalizeContent`/`timeoutMs`/`isConcurrencySafe`/`presentCall`/`presentResult` must never leak into a model request.
+A `ToolSchema` (the registered model-facing fields) plus a mandatory canonical output declaration, the `execute` function, an optional request-time schema projection, host-only scheduler metadata, an optional final-content callback, and optional UI presenters. The registry holds these; the loop dispatches calls through them. Request assembly builds `ToolSchema[]` by an explicit allowlist and applies `projectModelSchema` when an agent is present — `output`/`execute`/`projectModelSchema`/`finalizeContent`/`timeoutMs`/`isConcurrencySafe`/`presentCall`/`presentResult` must never leak into a model request.
 
 ```ts type-equiv
 /** Tool-owned canonical output contract used after the body returns a JSON value. */
@@ -27,6 +27,17 @@ interface ToolOutputDefinition {
 interface ToolDefinition extends ToolSchema {
   /** Mandatory canonical output declaration. */
   readonly output: ToolOutputDefinition
+  /**
+   * Project the description and parameters sent in one agent's model request.
+   * The registered schema remains the execution validator and the diagnostic
+   * fallback when no agent is present. Projected parameters must not admit an
+   * input the registered schema rejects. The projection must be synchronous
+   * and derive only from reconstructable agent/session state.
+   * @param agent - agent whose request is being assembled.
+   * @param schema - registered model-facing fields, borrowed as readonly input.
+   * @returns description and parameters for this request.
+   */
+  projectModelSchema?(agent: Agent, schema: Readonly<ToolSchema>): Pick<ToolSchema, 'description' | 'parameters'>
   /**
    * Run one accepted call and return only its canonical lossless-JSON value.
    * Async work must observe or forward `exec.signal` and settle only after its
@@ -93,7 +104,7 @@ interface ToolDefinition extends ToolSchema {
 }
 ```
 
-`execute` receives `args: unknown` — a raw `ToolDefinition` validates its own input. First-party tools don't write that by hand; they use `defineTool`, which validates and narrows the arguments, infers the body return from `output.schema`, and types both output projectors. `finalizeContent` deliberately receives the immutable execution instead of typed arguments because invalid-input and outer pipeline failures reach it too; it may enforce a tool-owned content bound while preserving `isError`, canonical value, structured error identity, deferred contexts, and presentation metadata.
+`execute` receives `args: unknown` — a raw `ToolDefinition` validates its own input. First-party tools don't write that by hand; they use `defineTool`, which validates and narrows the arguments, infers the body return from `output.schema`, and types both output projectors. `projectModelSchema` may change the description and narrow parameters for a request, but projected parameters must not admit an argument object that the registered validator rejects. The registered parameters continue to validate execution, and agentless `schemas()` diagnostics continue to expose the registered fallback. `finalizeContent` deliberately receives the immutable execution instead of typed arguments because invalid-input and outer pipeline failures reach it too; it may enforce a tool-owned content bound while preserving `isError`, canonical value, structured error identity, deferred contexts, and presentation metadata.
 
 ## The unified JSON-value schema DSL
 
@@ -148,7 +159,7 @@ type InferArgs<S> = InferProperties<S, []>
 
 `defineTool({ name, description, parameters, output, execute, … })` ties parameter inference to `parameterSchemaSpecToJsonSchema()` and `validateArgs()`, and ties `execute`/`render`/`presentationMeta` to `InferValue<OutputSchema>`. Schema records contain only own enumerable string keys, and schema arrays are dense intrinsic arrays, so inference, compilation, and validation observe the same declaration. Inference stays exact through 16 container levels and then widens to `JsonValue`; runtime validation keeps walking the complete schema. `valueSchemaSpecToJsonSchema()` compiles output declarations through the same enforced raw subset. A parameter mismatch throws `ToolArgsError` (`INVALID_ARGS`); an invalid body or post-policy value throws `ToolOutputError` (`INVALID_TOOL_OUTPUT`). Both use the normal tool-error path. Raw JSON Schema remains open by default; unsupported keywords reject instead of being accepted without enforcement.
 
-Registration is a trusted same-process contract. The registry borrows the typed definition as readonly input, requires `output`, validates its raw schema, and checks semantic requirements such as a positive finite `timeoutMs`; `schemas()` constructs the model-facing projection when building a request, so execution and presentation share one resolved definition without leaking callbacks onto the wire.
+Registration is a trusted same-process contract. The registry borrows the typed definition as readonly input, requires `output`, validates its raw schema, and checks semantic requirements such as a positive finite `timeoutMs`. Request assembly applies a synchronous `projectModelSchema` callback to reconstructable agent state for both native schemas and the PTC SDK; agentless `schemas()` returns the registered fallback, and execution always validates against that registered definition.
 
 ## `ToolRestriction` — one scope's live filter over what it inherits
 
