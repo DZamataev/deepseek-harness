@@ -68,4 +68,20 @@ describe('cleanPrediction', () => {
   it('rejects text at exactly the character ceiling', () => {
     expect(rejectReason(`${'a '.repeat(5)}${'b'.repeat(90)}`)).toBe('too_long')
   })
+
+  // Hermes measures the ceiling with Python's len(), which counts code points: each astral
+  // character is one code point but two UTF-16 units.
+  it('accepts 99 code points of astral text whose UTF-16 length exceeds the ceiling', () => {
+    const text = `run ${'😀'.repeat(95)}`
+    expect(Array.from(text).length).toBe(99)
+    expect(text.length).toBe(194)
+    expect(cleanPrediction(text)).toEqual({ kind: 'accepted', text })
+  })
+
+  it('rejects 100 code points of astral text with too_long', () => {
+    const text = `run ${'😀'.repeat(96)}`
+    expect(Array.from(text).length).toBe(100)
+    expect(text.length).toBe(196)
+    expect(cleanPrediction(text)).toEqual({ kind: 'rejected', reason: 'too_long' })
+  })
 })

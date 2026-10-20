@@ -4,7 +4,9 @@
  *
  * Ported from Hermes `tui_gateway/suggest_predict.py`; rule order is verdict order, so the first
  * failing rule is the reported reason. Python's `\w`, `\b`, and `\W` are Unicode-aware while
- * JavaScript's are ASCII-only, so the port spells out the Unicode-aware forms instead.
+ * JavaScript's are ASCII-only, so the port spells out the Unicode-aware forms instead. Python's
+ * `len()` counts code points, so text length comes from {@link codePointLength} rather than from
+ * UTF-16 `String#length`.
  *
  * @module @deepseek-ai/dsh-experimental-composer-prediction/filter
  */
@@ -102,6 +104,7 @@ const ROLE_PREFIX_RE = /^(?:user|assistant)\s*:\s*/iu
 /**
  * Count words with unspaced scripts folded in, as Hermes does: about two characters of kana, CJK
  * ideographs, or hangul count as one word, so a normal phrase is neither one word nor rejected.
+ * The `length` reads below count regex matches and whitespace tokens, not UTF-16 units.
  * @param text - unwrapped reply.
  * @returns Approximate word count.
  */
@@ -147,6 +150,16 @@ function stripQuotes(text: string): string {
 }
 
 /**
+ * Count Unicode code points the way Python's `len()` does: an astral character is one code point
+ * but two UTF-16 units, so the ceiling must not charge it twice.
+ * @param text - text to measure.
+ * @returns The number of code points.
+ */
+function codePointLength(text: string): number {
+  return Array.from(text).length
+}
+
+/**
  * Report the first acceptance rule an unwrapped reply fails.
  * @param text - unwrapped reply.
  * @returns The first failed rule, or undefined when the reply is a usable suggestion.
@@ -161,7 +174,7 @@ export function rejectReason(text: string): RejectReason | undefined {
   if (PREFIXED_LABEL_RE.test(text)) return 'prefixed_label'
   if (tooShort(text, lower, words)) return 'too_few_words'
   if (words > MAX_PREDICTION_WORDS) return 'too_many_words'
-  if (text.length >= MAX_PREDICTION_CHARS) return 'too_long'
+  if (codePointLength(text) >= MAX_PREDICTION_CHARS) return 'too_long'
   if (SENTENCE_BREAK_RE.test(text)) return 'multiple_sentences'
   if (text.includes('\n') || text.includes('*')) return 'has_formatting'
   if (EVALUATIVE_RE.test(lower)) return 'evaluative'
@@ -178,7 +191,7 @@ export function cleanPrediction(raw: string): CleanResult {
   const unwrapped = raw.trim().replace(WRAPPER_TAG_RE, '$2').trim()
   const unlabeled = stripQuotes(unwrapped).replace(LABEL_RE, '').replace(ROLE_PREFIX_RE, '')
   const text = stripQuotes(unlabeled.trim())
-  if (text.length === 0 || text.toUpperCase().replace(/\.+$/u, '') === NONE) return { kind: 'abstained' }
+  if (codePointLength(text) === 0 || text.toUpperCase().replace(/\.+$/u, '') === NONE) return { kind: 'abstained' }
   const reason = rejectReason(text)
   if (reason !== undefined) return { kind: 'rejected', reason }
   return { kind: 'accepted', text }
