@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-After each completed turn, this plugin asks the Session's own model what the user would type next and publishes the accepted guess as a Session projection. The request replays the last routed request byte-for-byte, so a provider's prefix cache covers all but the new reply and the instruction. It runs only in ordinary Sessions, after enough assistant replies, and while the replay would not be paid at full price. Mounting it alone issues those requests; [the client plugin](../client-ui-composer-prediction/README.md) shows the text in the composer, and [the bundle](../composer-prediction-bundle/README.md) mounts both.
+After each completed turn, this plugin asks the Session's own model what the user would type next and publishes the accepted guess as a Session projection. The request replays the last routed request byte-for-byte, so a provider's prefix cache covers all but the new reply and the instruction. It runs only in ordinary Sessions, after enough assistant replies, and while the estimated uncached input stays at or under `maxUncachedTokens`. Mounting it alone issues those requests; [the client plugin](../client-ui-composer-prediction/README.md) shows the text in the composer, and [the bundle](../composer-prediction-bundle/README.md) mounts both.
 
 ## Table of Contents
 
@@ -130,7 +130,7 @@ Format: 2-12 words in the user's own language and style. Output only the message
 
 #### Token effect
 
-One auxiliary request may follow each completed turn that passes the skip rules, capped by `maxOutputTokens` including provider-counted reasoning. Its input is the replayed conversation plus one instruction; the main conversation gains no message, so its next request keeps its own tokens. A skipped or aborted turn sends nothing, and a request that fails after the provider started replying is still billed.
+One auxiliary request may follow each completed turn that passes the skip rules, capped by `maxOutputTokens` including provider-counted reasoning. Its input is the replayed conversation plus one instruction; the main conversation gains no message, so its next request keeps its own tokens. A skipped turn sends no request, and a cancellation before dispatch sends none either; a cancellation after dispatch aborts the in-flight stream, so the provider may already have received and billed that input, and the superseded result is never recorded. A request that fails after the provider started replying is still billed.
 
 #### KV Cache effect
 
@@ -147,7 +147,7 @@ These constraints bound what a suggestion can cost and when one appears.
 - **The cold-cache guard is an estimate** — `maxUncachedTokens` compares the previous reply's reported usage, so a provider that miscounts cache reads, or a prefix that changed since the logged request, can still produce a replay paid in full.
 - **One prediction per Session at a time** — a new completed turn cancels the previous in-flight prediction, and only the latest started turn can hold a suggestion.
 - **A forked Session can show its parent's suggestion** — a fork refolds the records it inherited, so it can publish the parent's latest accepted text until its own next turn starts.
-- **Silence phrases keep ASCII word boundaries** — the Hermes port matches a few English silence phrases through `\b`, which JavaScript reads as ASCII-only, so such a phrase attached to a non-ASCII letter is not recognized as silence.
+- **Silence phrases use ASCII word boundaries** — the Hermes port matches the English phrases `silence is` and `stay silent` (also `stays silent` and `staying silent`) through `\b`, which JavaScript reads as ASCII-only, so a phrase touching a non-ASCII letter, such as `éstay silenté`, still matches; that text is treated as meta silence and rejected, where Hermes and its Unicode word boundaries would accept it.
 - **The Tab hint carries the whole suggestion** — the hint's accessible name and the editor's description both include the complete predicted text, so a screen reader reads the suggestion when it reaches either.
 
 <a id="dev-note"></a>

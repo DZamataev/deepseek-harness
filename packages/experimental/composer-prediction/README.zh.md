@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-每个完成的轮次结束后，此插件让 Session 自己的模型猜测用户接下来会输入什么，并把通过校验的猜测发布为 Session 投影。请求会逐字节重放上一次已路由的请求，因此提供方的前缀缓存能覆盖除新回复与追加指令之外的全部内容。它只在普通 Session、助手回复足够多、且重放不会按全价计费时运行。单独挂载它只会发出这些请求；[客户端插件](../client-ui-composer-prediction/README.zh.md) 负责在 composer 中显示文本，[Bundle](../composer-prediction-bundle/README.zh.md) 同时挂载两者。
+每个完成的轮次结束后，此插件让 Session 自己的模型猜测用户接下来会输入什么，并把通过校验的猜测发布为 Session 投影。请求会逐字节重放上一次已路由的请求，因此提供方的前缀缓存能覆盖除新回复与追加指令之外的全部内容。它只在普通 Session、助手回复足够多、且估算的未缓存输入不超过 `maxUncachedTokens` 时运行。单独挂载它只会发出这些请求；[客户端插件](../client-ui-composer-prediction/README.zh.md) 负责在 composer 中显示文本，[Bundle](../composer-prediction-bundle/README.zh.md) 同时挂载两者。
 
 ## 目录
 
@@ -130,7 +130,7 @@ Format: 2-12 words in the user's own language and style. Output only the message
 
 #### Token 影响
 
-每个通过跳过规则的完成轮次之后都可能发出一次辅助请求，其上限为 `maxOutputTokens`，包含提供方计入的推理内容。它的输入是重放的对话外加一条指令；主对话不增加任何消息，因此其下一次请求保持自己的 token 数。被跳过或被中止的轮次不发送任何内容，而提供方开始回复后才失败的请求仍会计费。
+每个通过跳过规则的完成轮次之后都可能发出一次辅助请求，其上限为 `maxOutputTokens`，包含提供方计入的推理内容。它的输入是重放的对话外加一条指令；主对话不增加任何消息，因此其下一次请求保持自己的 token 数。被跳过的轮次不发送请求，派发前取消也不发送；派发后取消会中止在途的流，因此提供方可能已经收到并计费该输入，而被取代的结果永远不会记录。提供方开始回复后才失败的请求仍会计费。
 
 #### KV Cache 影响
 
@@ -147,7 +147,7 @@ Format: 2-12 words in the user's own language and style. Output only the message
 - **冷缓存守卫只是估算**——`maxUncachedTokens` 比较上一条回复报告的用量，因此计错缓存读取的提供方，或自记录请求以来发生变化的前缀，仍可能产生按全价计费的重放。
 - **每个 Session 同时只有一次预测**——新的完成轮次会取消先前的在途预测，只有最新已开始的轮次能保留建议。
 - **分叉的 Session 可能显示父级建议**——分叉会重新折叠它继承的记录，因此在自己下一个轮次开始前可能发布父级最新的已接受文本。
-- **沉默短语保留 ASCII 词边界**——Hermes 移植版用 `\b` 匹配若干英文沉默短语，而 JavaScript 将其视为仅 ASCII，因此紧贴非 ASCII 字母的此类短语不会被识别为沉默。
+- **沉默短语使用 ASCII 词边界**——Hermes 移植版通过 `\b` 匹配英文短语 `silence is` 与 `stay silent`（还有 `stays silent` 与 `staying silent`），而 JavaScript 将其视为仅 ASCII，因此紧贴非 ASCII 字母的此类短语（例如 `éstay silenté`）仍会匹配；该文本会被当作元文本沉默并拒绝，而使用 Unicode 词边界的 Hermes 会接受它。
 - **Tab 提示携带整条建议**——提示的无障碍名称与编辑器的描述都包含完整的预测文本，因此屏幕阅读器移到任一控件时都会读出该建议。
 
 <a id="dev-note"></a>

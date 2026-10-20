@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This optional bundle adds composer prediction to a profile: the Host row predicts the next user message after each completed turn, and the Web row shows the accepted text as the composer placeholder with a Tab hint. It ships switched off; open Plugins, choose More, and switch on Composer prediction. Each completed turn can then bill one extra, mostly cached, request on the Session's own route, and the Host row skips the turns and Sessions where that request would be paid in full. Switching the bundle off removes both rows.
+This optional bundle adds composer prediction to a profile: the Host row predicts the next user message after each completed turn, and the Web row shows the accepted text as the composer placeholder with a Tab hint. It ships switched off; open Plugins, choose More, and switch on Composer prediction. Each completed turn can then bill one extra, mostly cached, request on the Session's own route, and the Host row skips a turn when the estimated uncached input of its replay exceeds `maxUncachedTokens`. Switching the bundle off removes both rows.
 
 ## Table of Contents
 
