@@ -4,13 +4,43 @@ import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies, provideWorkingDirectoryFixture } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { createAssistantMessage, createUserMessage, type StreamChunk } from '@deepseek-ai/dsh-llm'
-import { pluginRecordOf, Session, SessionId, type PluginRecord } from '@deepseek-ai/dsh-session'
-import { afterEach, describe, expect, it } from 'vitest'
+import { createAssistantMessage, createUserMessage, type StreamChunk, type TokenUsage } from '@deepseek-ai/dsh-llm'
+import {
+  pluginRecordOf,
+  Session,
+  SessionId,
+  type PluginRecord,
+  type PluginRecordMap,
+  type PluginRecordType,
+} from '@deepseek-ai/dsh-session'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { maxTokensResponse, MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import * as ComposerPrediction from '../src/index.ts'
 import { PREDICTION_INSTRUCTION } from '../src/instruction.ts'
 import { REQUEST_RECORD, RESULT_RECORD } from '../src/projection.ts'
+
+/** One record type the failure test makes its next append of throw. */
+const recordGate = vi.hoisted(() => ({ failType: undefined as string | undefined }))
+
+// The Session append path is not injectable, so the gate makes the type it names
+// refuse once while every other append delegates to the real implementation.
+vi.mock('@deepseek-ai/dsh-session', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@deepseek-ai/dsh-session')>()
+  return {
+    ...actual,
+    appendPluginRecord: <K extends Extract<keyof PluginRecordMap, PluginRecordType>>(
+      session: Session,
+      type: K,
+      data: PluginRecordMap[K],
+    ): ReturnType<typeof actual.appendPluginRecord> => {
+      if (type === recordGate.failType) {
+        recordGate.failType = undefined
+        throw new Error(`record store rejected ${type}`)
+      }
+      return actual.appendPluginRecord(session, type, data)
+    },
+  }
+})
 
 const CONFIG: ComposerPrediction.Config = {
   maxOutputTokens: 1024,
@@ -48,6 +78,7 @@ function withoutUsage(text: string): StreamChunk[] {
 
 const contexts: Context[] = []
 afterEach(async () => {
+  recordGate.failType = undefined
   for (const ctx of contexts.splice(0)) await ctx.fiber.dispose()
 })
 
@@ -139,6 +170,32 @@ async function accepted(agent: Agent): Promise<{ request: PluginRecord; result: 
   const result = records(agent, RESULT_RECORD)[0]
   if (request === undefined || result === undefined) throw new Error('the prediction was not recorded')
   return { request, result }
+}
+
+/** End `turn` without a model call by rewriting its proposed step to no messages. */
+function endEmptyTurn(ctx: Context, turn: number): void {
+  ctx.on('agent/pre-step', async ({ turn: proposed }, next) =>
+    proposed === turn ? { kind: 'enter', messages: [] } : next())
+}
+
+/**
+ * End `turn` without a model call after appending a legacy-shaped final
+ * assistant message whose usage exists only in the raw stream record.
+ */
+function endEmptyTurnWithRawUsage(ctx: Context, turn: number, usage: TokenUsage): void {
+  ctx.on('agent/pre-step', async ({ agent, turn: proposed }, next) => {
+    if (proposed !== turn) return next()
+    agent.session.append('assistant/message', {
+      turn: proposed,
+      step: 0,
+      message: createAssistantMessage({
+        content: [{ type: 'text', text: 'legacy' }],
+        source: { provider: 'mock', model: 'mock' },
+      }),
+      stream: [{ type: 'chunk', time: 0, chunk: { type: 'usage', usage } }],
+    }, { surfaceOp: 'append' })
+    return { kind: 'enter', messages: [] }
+  })
 }
 
 describe('composer prediction runner', () => {
@@ -427,30 +484,103 @@ describe('composer prediction runner', () => {
     expect(records(agent, RESULT_RECORD)).toEqual([])
   })
 
-  it('reads last-usage from the raw stream when the settled event has none', async () => {
-    const { agent } = await harness([
+  it('does not predict an empty completed turn from the previous turn\'s usage', async () => {
+    const { ctx, agent } = await harness([
       textResponse('one'),
       textResponse('two'),
-      textResponse('run the tests'),
-      textResponse('three'),
-      textResponse('continue'),
+      textResponse('NONE'),
+      textResponse('unexpected'),
     ])
     await turns(agent, 2)
-    await accepted(agent)
-    const { turn } = lastTurnEnd(agent)
-    agent.session.append('assistant/message', {
-      turn,
-      step: 0,
-      message: createAssistantMessage({
-        content: [{ type: 'text', text: 'legacy' }],
-        source: { provider: 'mock', model: 'mock' },
-      }),
-      stream: [{ type: 'chunk', time: 0, chunk: { type: 'usage', usage: { inputTokens: 5, outputTokens: 2 } } }],
-    }, { surfaceOp: 'append' })
+    await waitFor(() => records(agent, RESULT_RECORD).length === 1)
 
+    endEmptyTurn(ctx, 3)
+    await turns(agent, 1)
+    await settle()
+
+    expect(records(agent, REQUEST_RECORD).map(record => record.data)).toEqual([
+      expect.objectContaining({ turn: 2 }),
+    ])
+    expect(records(agent, RESULT_RECORD)).toHaveLength(1)
+  })
+
+  it('prices an empty turn by the raw-stream usage of its own final assistant message', async () => {
+    const { ctx, agent } = await harness([
+      textResponse('one'),
+      textResponse('two'),
+      textResponse('NONE'),
+      textResponse('run the tests'),
+    ])
+    await turns(agent, 2)
+    await waitFor(() => records(agent, RESULT_RECORD).length === 1)
+
+    endEmptyTurnWithRawUsage(ctx, 3, { inputTokens: 20_000, outputTokens: 5, cacheReadTokens: 1 })
     await turns(agent, 1)
     await waitFor(() => records(agent, REQUEST_RECORD).length === 2)
+    await waitFor(() => records(agent, RESULT_RECORD).length === 2)
 
-    expect(records(agent, REQUEST_RECORD)[1]?.data).toMatchObject({ turn: turn + 1 })
+    expect(records(agent, REQUEST_RECORD)[1]?.data).toMatchObject({ turn: 3 })
+    expect(records(agent, RESULT_RECORD)[1]?.data)
+      .toMatchObject({ turn: 3, outcome: 'accepted', text: 'run the tests' })
+  })
+
+  it('skips an empty turn whose raw-stream usage prices a full replay', async () => {
+    const { ctx, agent } = await harness([textResponse('one'), textResponse('two'), textResponse('NONE')])
+    await turns(agent, 2)
+    await waitFor(() => records(agent, RESULT_RECORD).length === 1)
+
+    endEmptyTurnWithRawUsage(ctx, 3, { inputTokens: 20_000, outputTokens: 5 })
+    await turns(agent, 1)
+    await settle()
+
+    expect(records(agent, REQUEST_RECORD).map(record => record.data)).toEqual([
+      expect.objectContaining({ turn: 2 }),
+    ])
+  })
+
+  it('reports each refused record once and keeps predicting later turns', async () => {
+    const { ctx, agent } = await harness([
+      textResponse('one'),
+      textResponse('two'),
+      textResponse('three'),
+      textResponse('pick three'),
+      textResponse('four'),
+      textResponse('pick four'),
+    ])
+    const warnings: string[] = []
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation((format: unknown) => {
+      warnings.push(String(format))
+    })
+    const unhandled: unknown[] = []
+    const onUnhandled = (reason: unknown): void => { unhandled.push(reason) }
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      await turns(agent, 1)
+      recordGate.failType = REQUEST_RECORD
+      await turns(agent, 1)
+      await waitFor(() => warnings.length === 1)
+      recordGate.failType = RESULT_RECORD
+      await turns(agent, 1)
+      await waitFor(() => warnings.length === 2)
+      await turns(agent, 1)
+      await waitFor(() => records(agent, RESULT_RECORD).length === 1)
+      await settle()
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
+
+    expect(unhandled).toEqual([])
+    expect(warn).toHaveBeenCalledTimes(2)
+    expect(warnings[0]).toContain(REQUEST_RECORD)
+    expect(warnings[0]).toContain(agent.session.id)
+    expect(warnings[1]).toContain(RESULT_RECORD)
+    expect(warnings[1]).toContain(agent.session.id)
+    expect(records(agent, REQUEST_RECORD).map(record => record.data)).toEqual([
+      expect.objectContaining({ turn: 3 }),
+      expect.objectContaining({ turn: 4 }),
+    ])
+    expect(records(agent, RESULT_RECORD).map(record => record.data)).toEqual([
+      expect.objectContaining({ turn: 4, outcome: 'accepted', text: 'pick four' }),
+    ])
   })
 })

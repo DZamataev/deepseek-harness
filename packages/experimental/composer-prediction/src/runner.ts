@@ -5,7 +5,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { appendPluginRecord, type Session, type SessionId } from '@deepseek-ai/dsh-session'
+import { appendPluginRecord, type Session, type SessionId, type SessionSeq } from '@deepseek-ai/dsh-session'
 // Loads the Agent event declarations for `agent/inbox/inserted` and `agent/disposed`.
 import type {} from '@deepseek-ai/dsh-agent'
 import { BlockAssembler, lastAssistantStreamChunk, type TokenUsage } from '@deepseek-ai/dsh-llm'
@@ -17,7 +17,8 @@ import { REQUEST_RECORD, RESULT_RECORD } from './projection.ts'
 import type { PredictionResultRecord } from './types.ts'
 
 /**
- * Start scheduling predictions on this plugin fiber.
+ * Start scheduling predictions on this plugin fiber. A record append failure is
+ * reported through `ctx.logger` and drops only that prediction.
  * @param ctx - plugin context providing `llm`, `agents`, and the `session/event` feed.
  * @param config - resolved configuration.
  */
@@ -42,6 +43,9 @@ export function startPredictions(ctx: Context, config: PredictionConfig): void {
     switch (event.type) {
       case 'turn/start':
         cancel(session.id)
+        // Usage belongs to the turn that reported it: a turn that settles no assistant
+        // message of its own must not plan with the previous turn's numbers.
+        lastUsage.delete(session.id)
         return
       case 'assistant/message': {
         const usage = event.data.usage ?? lastAssistantStreamChunk(event.data.stream, 'usage')?.usage
@@ -89,14 +93,21 @@ async function predict(
   superseded: AbortSignal,
 ): Promise<void> {
   if (aborted(superseded)) return
-  const requestSeq = appendPluginRecord(session, REQUEST_RECORD, {
-    turn: plan.turn,
-    throughSeq: plan.throughSeq,
-    provider: plan.request.provider,
-    model: plan.request.model,
-    maxTokens: config.maxOutputTokens,
-    instruction: PREDICTION_INSTRUCTION,
-  })
+  let requestSeq: SessionSeq
+  try {
+    requestSeq = appendPluginRecord(session, REQUEST_RECORD, {
+      turn: plan.turn,
+      throughSeq: plan.throughSeq,
+      provider: plan.request.provider,
+      model: plan.request.model,
+      maxTokens: config.maxOutputTokens,
+      instruction: PREDICTION_INSTRUCTION,
+    })
+  } catch (error) {
+    // Without its request record a result has no anchor, so this prediction stops here.
+    reportRecordFailure(ctx, session, REQUEST_RECORD, error)
+    return
+  }
   const signal = AbortSignal.any([superseded, AbortSignal.timeout(config.timeoutMs)])
   const assembler = new BlockAssembler()
   let result: Omit<PredictionResultRecord, 'requestSeq' | 'turn'>
@@ -108,7 +119,22 @@ async function predict(
     result = { outcome: 'failed', text: null, reason: error instanceof Error ? error.name : 'unknown' }
   }
   if (aborted(superseded)) return
-  appendPluginRecord(session, RESULT_RECORD, { requestSeq, turn: plan.turn, ...result })
+  try {
+    appendPluginRecord(session, RESULT_RECORD, { requestSeq, turn: plan.turn, ...result })
+  } catch (error) {
+    reportRecordFailure(ctx, session, RESULT_RECORD, error)
+  }
+}
+
+/**
+ * Report one record a Session refused, keeping the deferred prediction task total.
+ * @param ctx - plugin context owning the log line.
+ * @param session - Session whose log rejected the record.
+ * @param type - rejected record type.
+ * @param error - the append failure.
+ */
+function reportRecordFailure(ctx: Context, session: Session, type: string, error: unknown): void {
+  ctx.logger.warn(`composer-prediction: dropped ${type} record for session "${session.id}": ${String(error)}`)
 }
 
 /**
