@@ -41,6 +41,14 @@ function accepted(turn: number, text: string): PredictionResultRecord {
   return { requestSeq: SessionSeq(0), turn, outcome: 'accepted', text }
 }
 
+/** Append one accepted result record for `turn` and return the committed event. */
+function appendResult(log: Session, turn: number, text: string): SessionEvent {
+  appendPluginRecord(log, RESULT_RECORD, accepted(turn, text))
+  const event = log.snapshotEvents().at(-1)
+  if (event === undefined) throw new Error('the record append committed no event')
+  return event
+}
+
 /** A user message as a turn or inbox event carries it. */
 function userMessage(text: string) {
   return createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } })
@@ -107,15 +115,57 @@ describe('composerPrediction projection', () => {
     expect(unit.apply(state, log.append('agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [] }))).toBe(state)
   })
 
-  it('keeps the view reference stable while the accepted result stands', () => {
-    const log = commit('stable-view')
+  it('keeps the state and view references when the same accepted result folds again', () => {
+    const log = commit('repeat-result')
     log.append('turn/start', { turn: 1 })
-    appendPluginRecord(log, RESULT_RECORD, accepted(1, 'x y'))
+    const started = fold(log.snapshotEvents())
+    const committed = appendResult(log, 1, 'x y')
+    const state = unit.apply(started, committed)
+    const view = unit.wire.view(state)
+
+    const repeated = unit.apply(state, committed)
+
+    expect(repeated).toBe(state)
+    expect(unit.wire.view(repeated)).toBe(view)
+  })
+
+  it('keeps the state reference when the same turn starts again with no suggestion', () => {
+    const log = commit('repeat-turn-start')
+    log.append('turn/start', { turn: 1 })
     const state = fold(log.snapshotEvents())
 
-    expect(unit.wire.view(state)).toBe(unit.wire.view(state))
-    expect(unit.wire.viewSchema.parse(unit.wire.view(state))).toEqual({ turn: 1, text: 'x y' })
+    expect(unit.apply(state, log.append('turn/start', { turn: 1 }))).toBe(state)
+  })
+
+  it('a repeated turn/start still withdraws a standing suggestion', () => {
+    const log = commit('repeat-turn-start-clears')
+    log.append('turn/start', { turn: 1 })
+    const started = fold(log.snapshotEvents())
+    const state = unit.apply(started, appendResult(log, 1, 'x y'))
+
+    const cleared = unit.apply(state, log.append('turn/start', { turn: 1 }))
+
+    expect(cleared).not.toBe(state)
+    expect(unit.wire.view(cleared)).toBeNull()
+  })
+
+  it('republishes the view only when the accepted result changes', () => {
+    const log = commit('view-transition')
+    log.append('turn/start', { turn: 1 })
+    const started = fold(log.snapshotEvents())
+    const state = unit.apply(started, appendResult(log, 1, 'x y'))
+    const view = unit.wire.view(state)
+
+    const unrelated = unit.apply(state, log.append('step/end', { turn: 1, step: 0 }))
+    expect(unrelated).toBe(state)
+    expect(unit.wire.view(unrelated)).toBe(view)
+    expect(unit.wire.viewSchema.parse(view)).toEqual({ turn: 1, text: 'x y' })
     expect(unit.stateSchema.parse(JSON.parse(JSON.stringify(state)))).toEqual(state)
+
+    const changed = unit.apply(state, appendResult(log, 1, 'z w'))
+    expect(changed).not.toBe(state)
+    expect(unit.wire.view(changed)).not.toBe(view)
+    expect(unit.wire.view(changed)).toEqual({ turn: 1, text: 'z w' })
   })
 
   it('clearing an already empty prediction keeps the state reference', () => {

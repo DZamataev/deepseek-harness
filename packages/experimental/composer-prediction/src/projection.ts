@@ -45,11 +45,12 @@ function clear(state: ComposerPredictionState): ComposerPredictionState {
  * Fold one committed event into the projection state.
  * @param state - state covering all prior events.
  * @param event - the next committed Session event.
- * @returns the next state, or the same reference when the event does not concern this unit.
+ * @returns the next state, or the same reference when the event leaves the state unchanged.
  */
 function apply(state: ComposerPredictionState, event: SessionEvent): ComposerPredictionState {
   switch (event.type) {
     case 'turn/start':
+      if (event.data.turn === state.startedTurn && state.prediction === null) return state
       return { startedTurn: event.data.turn, prediction: null }
     case 'user/message':
       return clear(state)
@@ -62,6 +63,8 @@ function apply(state: ComposerPredictionState, event: SessionEvent): ComposerPre
       const parsed = resultRecordSchema.safeParse(record.data)
       if (!parsed.success || parsed.data.outcome !== 'accepted' || parsed.data.text === null) return state
       if (parsed.data.turn !== state.startedTurn) return state
+      const current = state.prediction
+      if (current !== null && current.turn === parsed.data.turn && current.text === parsed.data.text) return state
       return { ...state, prediction: { turn: parsed.data.turn, text: parsed.data.text } }
     }
   }
