@@ -1009,6 +1009,79 @@ describe('provider profile lifecycle', () => {
   })
 })
 
+describe('Claude Code relay routes', () => {
+  async function relay(url: string, profile: Record<string, unknown> = {}): Promise<Context> {
+    vi.stubEnv('PI_TEST_KEY', 'test-key')
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: {
+        anthropic: {
+          apiKeyEnv: 'PI_TEST_KEY',
+          baseURL: url,
+          claudeCodeVersion: '2.1.300',
+          models: [{ id: 'claude-opus-5-5' }],
+          ...profile,
+        },
+      },
+    })
+    return ctx
+  }
+
+  it('sends the identity as its own first system block, Claude Code headers, and the session id', async () => {
+    const server = await mockServer([{ events: anthropicTextEvents }])
+    const ctx = await relay(server.url, { headers: { 'x-extra': 'kept', 'user-agent': 'overridden' } })
+
+    await assemble(ctx, {
+      provider: 'anthropic',
+      model: 'claude-opus-5-5',
+      system: 'Harness prompt.',
+      messages: [],
+      sessionId: 'session-0b8a6c1e-2f4d-4e5a-9c7b-1d2e3f4a5b6c' as never,
+    })
+
+    expect(server.requests[0]).toMatchObject({
+      system: [
+        { type: 'text', text: 'You are Claude Code, Anthropic\'s official CLI for Claude.' },
+        { type: 'text', text: 'Harness prompt.' },
+      ],
+    })
+    expect((server.requests[0] as { system: unknown[] }).system[0]).not.toHaveProperty('cache_control')
+    expect(server.headers[0]).toMatchObject({
+      'user-agent': 'claude-cli/2.1.300 (external, cli)',
+      'x-app': 'cli',
+      'x-claude-code-session-id': '0b8a6c1e-2f4d-4e5a-9c7b-1d2e3f4a5b6c',
+      'x-api-key': 'test-key',
+      'x-extra': 'kept',
+    })
+    expect(server.headers[0]?.['anthropic-beta']).toContain('claude-code-20250219')
+  })
+
+  it('keeps Harness attribution and the plain system prompt on an ordinary Anthropic route', async () => {
+    const server = await mockServer([{ events: anthropicTextEvents }])
+    const ctx = await relay(server.url, { claudeCodeVersion: undefined })
+
+    await assemble(ctx, { provider: 'anthropic', model: 'claude-opus-5-5', system: 'Harness prompt.', messages: [] })
+
+    expect(server.requests[0]).toMatchObject({ system: [{ type: 'text', text: 'Harness prompt.' }] })
+    expect(server.headers[0]?.['user-agent']).toBe(userAgent())
+    expect(server.headers[0]).not.toHaveProperty('x-claude-code-session-id')
+  })
+
+  it('refuses a relay on a route that is not Anthropic Messages, and an empty version', () => {
+    expect(() => resolveProfiles({
+      gateway: {
+        api: 'openai-completions',
+        baseURL: 'http://127.0.0.1:9/v1',
+        claudeCodeVersion: '2.1.300',
+        models: [{ id: 'm', contextWindow: 8192, maxTokens: 1024 }],
+      },
+    })).toThrow(/claudeCodeVersion requires anthropic-messages models; "m" uses openai-completions/)
+    expect(() => resolveProfiles({ anthropic: { claudeCodeVersion: '' } }))
+      .toThrow(/claudeCodeVersion must be non-empty/)
+  })
+})
+
 describe('abort wiring', () => {
   it('preserves an unknown pre-dispatch adapter Error exactly', async () => {
     const original = new Error('SDK context conversion exploded')

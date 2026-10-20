@@ -223,6 +223,45 @@ function requestHeaders(headers: Readonly<Record<string, string>> | undefined): 
   }
 }
 
+const CLAUDE_CODE_IDENTITY = 'You are Claude Code, Anthropic\'s official CLI for Claude.'
+
+/**
+ * Claude Code client headers for a relay route; they replace Harness attribution
+ * because such a relay refuses traffic that does not identify as Claude Code.
+ * @param headers - deployment headers configured on the route.
+ * @param version - Claude Code version the route presents.
+ * @param sessionId - conversation id; the relay keeps one conversation on one upstream account.
+ * @returns request headers.
+ */
+function claudeCodeHeaders(
+  headers: Readonly<Record<string, string>> | undefined,
+  version: string,
+  sessionId: string | undefined,
+): Record<string, string> {
+  return {
+    ...headers,
+    'user-agent': `claude-cli/${version} (external, cli)`,
+    'x-app': 'cli',
+    // Claude Code session ids are bare uuids.
+    ...sessionId === undefined ? {} : { 'x-claude-code-session-id': sessionId.replace(/^session-/, '') },
+  }
+}
+
+/**
+ * Prepend the Claude Code identity as its own first system block; relays reject
+ * the identity merged into a longer block.
+ * @param payload - Anthropic Messages parameters pi-ai built.
+ * @returns the parameters with the identity block and Claude Code beta.
+ */
+function withClaudeCodeIdentity(payload: unknown): unknown {
+  const params = payload as { system?: unknown[]; betas?: string[] }
+  return {
+    ...params,
+    system: [{ type: 'text', text: CLAUDE_CODE_IDENTITY }, ...params.system ?? []],
+    betas: [...params.betas ?? [], 'claude-code-20250219'],
+  }
+}
+
 /**
  * pi-ai-backed multi-provider adapter. Each operation reads the current
  * profiles, so a configuration change reaches the next request without a
@@ -420,8 +459,13 @@ export class PiAiAdapter extends LlmAdapter {
         ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
         signal: watchdog.signal,
         // Profile headers are deployment-owned; attribution names are
-        // Harness-owned and therefore win collisions.
-        headers: requestHeaders(profile.headers),
+        // Harness-owned and therefore win collisions, except on a Claude Code relay route.
+        ...profile.claudeCodeVersion === undefined
+          ? { headers: requestHeaders(profile.headers) }
+          : {
+            headers: claudeCodeHeaders(profile.headers, profile.claudeCodeVersion, options.sessionId),
+            onPayload: withClaudeCodeIdentity,
+          },
       })
       const iterator = toStreamChunks(events, model.contextWindow, options.signal, model.id)[Symbol.asyncIterator]()
       let exhausted = false
