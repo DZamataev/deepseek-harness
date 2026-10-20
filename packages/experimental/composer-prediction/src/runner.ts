@@ -1,10 +1,11 @@
 /**
  * Post-turn prediction scheduling. One request per completed turn and Session;
  * a newer turn, an inbox insertion, Agent disposal, or plugin disposal aborts
- * it, and an aborted request records no result.
+ * it, and an aborted request records no result. Plugin disposal stops admitting
+ * predictions and resolves only after every dispatched prediction has settled.
  */
 
-import type { Context } from '@deepseek-ai/cordis'
+import { FiberState, type Context } from '@deepseek-ai/cordis'
 import { appendPluginRecord, type Session, type SessionId, type SessionSeq } from '@deepseek-ai/dsh-session'
 // Loads the Agent event declarations for `agent/inbox/inserted` and `agent/disposed`.
 import type {} from '@deepseek-ai/dsh-agent'
@@ -18,21 +19,25 @@ import type { PredictionResultRecord } from './types.ts'
 
 /**
  * Start scheduling predictions on this plugin fiber. A record append failure is
- * reported through `ctx.logger` and drops only that prediction.
+ * reported through `ctx.logger` and drops only that prediction; disposal aborts
+ * every prediction and awaits all of them, including superseded ones.
  * @param ctx - plugin context providing `llm`, `agents`, and the `session/event` feed.
  * @param config - resolved configuration.
  */
 export function startPredictions(ctx: Context, config: PredictionConfig): void {
   const inflight = new Map<SessionId, AbortController>()
+  /** Every dispatched prediction until it settles; superseded ones stay here. */
+  const tasks = new Set<Promise<void>>()
   const lastUsage = new Map<SessionId, TokenUsage>()
   const cancel = (id: SessionId): void => {
     inflight.get(id)?.abort()
     inflight.delete(id)
   }
-  ctx.effect(() => () => {
+  ctx.effect(() => async () => {
     for (const controller of inflight.values()) controller.abort()
     inflight.clear()
     lastUsage.clear()
+    await Promise.allSettled([...tasks])
   }, 'composer-prediction requests')
   ctx.on('agent/inbox/inserted', ({ agent }) => { cancel(agent.session.id) })
   ctx.on('agent/disposed', ({ agent }) => {
@@ -65,9 +70,19 @@ export function startPredictions(ctx: Context, config: PredictionConfig): void {
         inflight.set(session.id, controller)
         // A record cannot be appended while this event is still publishing.
         queueMicrotask(() => {
-          void predict(ctx, session, verdict.plan, config, controller.signal).finally(() => {
-            if (inflight.get(session.id) === controller) inflight.delete(session.id)
-          })
+          // Disposal takes the fiber out of ACTIVE synchronously, before any
+          // queued microtask runs: a prediction planned by the last turn/end
+          // must not be admitted while the plugin is unloading.
+          if (ctx.fiber.state !== FiberState.ACTIVE) {
+            cancel(session.id)
+            return
+          }
+          const task: Promise<void> = predict(ctx, session, verdict.plan, config, controller.signal)
+            .finally(() => {
+              tasks.delete(task)
+              if (inflight.get(session.id) === controller) inflight.delete(session.id)
+            })
+          tasks.add(task)
         })
         return
       }

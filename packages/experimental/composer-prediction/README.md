@@ -33,7 +33,7 @@ A prediction is planned when a `turn/end` whose reason is `completed` commits fo
 
 A completed turn is skipped when the Session has no logged routed request, holds fewer than `minAssistantMessages` assistant messages, ends on a message that is not an assistant reply, ends on a reply that carries a tool call, reports no usage for that reply, or estimates more uncached input than `maxUncachedTokens`. The estimate charges the previous reply's output tokens when the provider reported cache reads, and the whole prompt when it reported none, so a provider that never reports cache reads is treated as not caching.
 
-One prediction runs per Session at a time. A new `turn/start`, a user message inserted into the inbox, disposal of the Agent, or unloading the plugin aborts the in-flight request, and an aborted request appends no result. The projection holds a suggestion only for the latest started turn; a newer turn, a user message, or a non-empty inbox insertion withdraws it.
+One prediction runs per Session at a time. A new `turn/start`, a user message inserted into the inbox, disposal of the Agent, or unloading the plugin aborts the in-flight request; an aborted request appends no result, and plugin unloading resolves only after every prediction it started has settled, including one a later turn superseded. The projection holds a suggestion only for the latest started turn; a newer turn, a user message, or a non-empty inbox insertion withdraws it.
 
 ### Configuration
 
@@ -70,7 +70,7 @@ Everything is decided at the committed `turn/end` and frozen, so the replay is e
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: validated `Config`, projection registration, and scheduler start |
 | [`src/plan.ts`](src/plan.ts) | Send-or-skip decision, the uncached-input estimate, and the frozen request |
-| [`src/runner.ts`](src/runner.ts) | Post-turn scheduling, cancellation, the model call, record appends, and outcome interpretation |
+| [`src/runner.ts`](src/runner.ts) | Post-turn scheduling, cancellation, the model call, record appends, outcome interpretation, and disposal that awaits every prediction |
 | [`src/filter.ts`](src/filter.ts) | Acceptance rules: word count, length, meta text, placeholders, praise, and assistant voice |
 | [`src/instruction.ts`](src/instruction.ts) | The exact instruction appended after the replayed conversation |
 | [`src/projection.ts`](src/projection.ts) | `composerPrediction` fold over turns, user messages, inbox insertions, and result records |

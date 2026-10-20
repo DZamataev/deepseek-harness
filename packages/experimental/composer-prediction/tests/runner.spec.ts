@@ -4,7 +4,14 @@ import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies, provideWorkingDirectoryFixture } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { createAssistantMessage, createUserMessage, type StreamChunk, type TokenUsage } from '@deepseek-ai/dsh-llm'
+import {
+  createAssistantMessage,
+  createUserMessage,
+  LlmAdapter,
+  type GenerateOptions,
+  type StreamChunk,
+  type TokenUsage,
+} from '@deepseek-ai/dsh-llm'
 import {
   pluginRecordOf,
   Session,
@@ -52,6 +59,83 @@ const CONFIG: ComposerPrediction.Config = {
 /** Entries accepted by the shared mock adapter. */
 type Script = ConstructorParameters<typeof MockAdapter>[0]
 
+/** Entries the gated adapter serves for ordinary (non-prediction) calls. */
+type GatedScript = (StreamChunk[] | ((options: GenerateOptions) => StreamChunk[]) | 'hang')[]
+
+/** A promise together with the sole resolution the test controls. */
+interface Gate {
+  readonly promise: Promise<void>
+  resolve(): void
+}
+
+/** @returns a gate the test releases explicitly. */
+function gate(): Gate {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => { resolve = done })
+  return { promise, resolve }
+}
+
+/**
+ * Adapter that serves scripted main turns and a prediction stream whose abort
+ * cleanup waits for {@link releaseCleanup}, standing in for provider teardown
+ * that outlasts the abort request.
+ */
+class GatedPredictionAdapter extends LlmAdapter {
+  readonly requests: GenerateOptions[] = []
+  /** Resolves once a prediction stream is waiting for its abort. */
+  readonly streaming = gate()
+  /** Resolves once an aborted prediction stream has entered its cleanup. */
+  readonly cleaningUp = gate()
+  /** Whether the started cleanup finished. */
+  cleanupFinished = false
+  private readonly cleanup = gate()
+
+  /** @param script - chunk entries or a hang marker for the main model calls, consumed in order. */
+  constructor(private readonly script: GatedScript) {
+    super()
+  }
+
+  /** Let every gated prediction cleanup finish. */
+  releaseCleanup(): void {
+    this.cleanup.resolve()
+  }
+
+  /**
+   * Serve one model call.
+   * @param options - assembled request; a prediction request streams one chunk and waits for its abort.
+   * @returns the chunk stream.
+   */
+  async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    this.requests.push(options)
+    if (options.purpose !== 'composer-prediction') {
+      const entry = this.script.shift()
+      if (entry === undefined) throw new Error('GatedPredictionAdapter: script exhausted')
+      if (entry === 'hang') {
+        yield { type: 'block-start', index: 0, blockType: 'text' }
+        await new Promise<void>((_resolve, reject) => {
+          if (options.signal?.aborted) { reject(new Error('aborted')); return }
+          options.signal?.addEventListener('abort', () => { reject(new Error('aborted')) }, { once: true })
+        })
+        return
+      }
+      for (const chunk of typeof entry === 'function' ? entry(options) : entry) yield chunk
+      return
+    }
+    try {
+      yield { type: 'block-start', index: 0, blockType: 'text' }
+      await new Promise<void>((_resolve, reject) => {
+        this.streaming.resolve()
+        if (options.signal?.aborted) { reject(new Error('aborted')); return }
+        options.signal?.addEventListener('abort', () => { reject(new Error('aborted')) }, { once: true })
+      })
+    } finally {
+      this.cleaningUp.resolve()
+      await this.cleanup.promise
+      this.cleanupFinished = true
+    }
+  }
+}
+
 /** A model reply with a reasoning block before the text. */
 function reasoningThenText(text: string): StreamChunk[] {
   return [
@@ -83,8 +167,17 @@ afterEach(async () => {
 })
 
 /** A real agent with the plugin mounted over the mock route. */
-async function harness(
+function harness(
   script: Script,
+  config: Partial<ComposerPrediction.Config> = {},
+  beforePlugin?: (ctx: Context) => void,
+) {
+  return harnessWith(new MockAdapter(script), config, beforePlugin)
+}
+
+/** A real agent with the plugin mounted over `adapter`. */
+async function harnessWith<A extends LlmAdapter>(
+  adapter: A,
   config: Partial<ComposerPrediction.Config> = {},
   beforePlugin?: (ctx: Context) => void,
 ) {
@@ -93,7 +186,6 @@ async function harness(
   provideWorkingDirectoryFixture(ctx)
   await mountAgentLoopTestDependencies(ctx)
   const loop = await ctx.plugin(AgentLoop, { agents: [] })
-  const adapter = new MockAdapter(script)
   ctx.llm.registerAdapter(['mock'], adapter)
   beforePlugin?.(ctx)
   const fiber = await ctx.plugin(ComposerPrediction, {
@@ -141,6 +233,20 @@ async function waitFor(predicate: () => boolean, timeout = 5000, interval = 10):
 /** Give queued microtasks and record appends a turn to settle. */
 async function settle(): Promise<void> {
   await new Promise(resolve => setTimeout(resolve, 25))
+}
+
+/**
+ * Poll until `promise` settles or the deadline passes.
+ * @param promise - promise whose settlement is observed.
+ * @param timeout - bounded wait; this is not the condition under test.
+ * @returns whether the promise settled within the bound.
+ */
+async function settledWithin(promise: Promise<unknown>, timeout = 250): Promise<boolean> {
+  let settled = false
+  void promise.then(() => { settled = true }, () => { settled = true })
+  const deadline = Date.now() + timeout
+  while (!settled && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5))
+  return settled
 }
 
 /** Committed records of one plugin type in a log, in order. */
@@ -422,6 +528,64 @@ describe('composer prediction runner', () => {
 
     expect(records(agent, REQUEST_RECORD)).toHaveLength(1)
     expect(records(agent, RESULT_RECORD)).toEqual([])
+  })
+
+  it('waits for an aborted prediction stream to finish cleaning up before disposal resolves', async () => {
+    const adapter = new GatedPredictionAdapter([textResponse('one'), textResponse('two')])
+    const { agent, fiber } = await harnessWith(adapter)
+    await turns(agent, 2)
+    await adapter.streaming.promise
+
+    const disposal = fiber.dispose()
+    await adapter.cleaningUp.promise
+    // The gate stays closed: only cleanup completion can release the disposer.
+    expect(await settledWithin(disposal)).toBe(false)
+
+    adapter.releaseCleanup()
+    await disposal
+    expect(adapter.cleanupFinished).toBe(true)
+  })
+
+  it('awaits a prediction superseded by a new turn before disposal resolves', async () => {
+    const adapter = new GatedPredictionAdapter([textResponse('one'), textResponse('two'), 'hang'])
+    const { agent, fiber, loop } = await harnessWith(adapter)
+    await turns(agent, 2)
+    await adapter.streaming.promise
+
+    // The next turn's start cancels the prediction; its cleanup waits on the gate,
+    // and the main call hangs so no second turn/end can plan a replacement.
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go on' }], source: { kind: 'user' } }))
+    await adapter.cleaningUp.promise
+    const disposal = fiber.dispose()
+    expect(await settledWithin(disposal)).toBe(false)
+
+    adapter.releaseCleanup()
+    await disposal
+    await loop.dispose()
+    expect(adapter.cleanupFinished).toBe(true)
+    expect(adapter.requests.filter(request => request.purpose === 'composer-prediction')).toHaveLength(1)
+    expect(records(agent, RESULT_RECORD)).toEqual([])
+  })
+
+  it('drops a prediction queued by the closing turn when disposal starts first', async () => {
+    const holder: { fiber?: { dispose(): Promise<void> } } = {}
+    let disposal: Promise<void> | undefined
+    const mounted = await harness([textResponse('one'), textResponse('two')], {}, (ctx) => {
+      ctx.on('session/event', (_session, event) => {
+        if (event.type !== 'turn/end' || event.data.turn !== 2) return
+        // Queued before the plugin's prediction microtask, so disposal starts first.
+        queueMicrotask(() => {
+          disposal = holder.fiber?.dispose()
+        })
+      })
+    })
+    holder.fiber = mounted.fiber
+    await turns(mounted.agent, 2)
+    await waitFor(() => disposal !== undefined)
+    await disposal
+
+    expect(mounted.adapter.requests.filter(request => request.purpose === 'composer-prediction')).toEqual([])
+    expect(records(mounted.agent, REQUEST_RECORD)).toEqual([])
   })
 
   it('records a failed result when the prediction transport throws', async () => {

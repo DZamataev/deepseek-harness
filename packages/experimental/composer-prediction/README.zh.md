@@ -33,7 +33,7 @@ kind: "package-reference"
 
 以下情况会跳过已完成的轮次：Session 没有已记录的路由请求、助手消息少于 `minAssistantMessages` 条、最后一条消息不是助手回复、最后一条回复带有工具调用、该回复没有报告用量，或估算的未缓存输入超过 `maxUncachedTokens`。当提供方报告了缓存读取时，估算只计上一条回复的输出 token；没有报告时则计整个提示词，因此从不报告缓存读取的提供方会被视为不做缓存。
 
-每个 Session 同时只运行一次预测。新的 `turn/start`、插入收件箱的用户消息、Agent 释放或插件卸载都会中止在途请求，被中止的请求不会追加结果。投影只保留最新已开始轮次的建议；更新的轮次、用户消息或非空的收件箱插入都会撤回它。
+每个 Session 同时只运行一次预测。新的 `turn/start`、插入收件箱的用户消息、Agent 释放或插件卸载都会中止在途请求；被中止的请求不会追加结果，而插件卸载只会在它启动的每次预测（包括已被后续轮次取代的预测）都结束之后才完成。投影只保留最新已开始轮次的建议；更新的轮次、用户消息或非空的收件箱插入都会撤回它。
 
 ### 配置
 
@@ -70,7 +70,7 @@ kind: "package-reference"
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口：校验后的 `Config`、投影注册与调度器启动 |
 | [`src/plan.ts`](src/plan.ts) | 发送或跳过的判定、未缓存输入估算与冻结的请求 |
-| [`src/runner.ts`](src/runner.ts) | 轮次后调度、取消、模型调用、记录追加与结果解读 |
+| [`src/runner.ts`](src/runner.ts) | 轮次后调度、取消、模型调用、记录追加、结果解读，以及等待每次预测结束的释放 |
 | [`src/filter.ts`](src/filter.ts) | 接受规则：词数、长度、元文本、占位符、赞扬与助手口吻 |
 | [`src/instruction.ts`](src/instruction.ts) | 在重放对话之后追加的确切指令 |
 | [`src/projection.ts`](src/projection.ts) | 针对轮次、用户消息、收件箱插入与结果记录的 `composerPrediction` 折叠 |
