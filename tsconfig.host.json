@@ -367,6 +367,7 @@
     { "path": "./packages/session/session-title-llm" },
     { "path": "./packages/session/session-title-first-prompt-llm" },
     { "path": "./packages/experimental/session-title-all-prompts-llm" },
+    { "path": "./packages/experimental/composer-prediction" },
     { "path": "./packages/session/session-turn-outline" },
     { "path": "./packages/session/session-telemetry" },
     { "path": "./packages/identity/anonymous-user-id" },
