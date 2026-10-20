@@ -62,7 +62,7 @@ kind: "package-reference"
 
 ### 设计理念
 
-一切都在提交的 `turn/end` 上决定并冻结，因此重放正好是该轮次结束时的对话；第一个 `await` 之后不再重新派生任何内容。输出过滤器是 Hermes `tui_gateway/suggest_predict.py` 规则的移植，使用 Unicode 感知的词边界和与 Python 一致的码点长度。
+一切都在提交的 `turn/end` 上决定并冻结，因此重放正好是该轮次结束时的对话；第一个 `await` 之后不再重新派生任何内容。输出过滤器是 Hermes `tui_gateway/suggest_predict.py` 规则的移植，在移植明确写出的地方使用 Unicode 感知的词边界（英语静默短语除外，它们沿用 ASCII `\b`），并使用与 Python 一致的码点长度。
 
 ### 源码地图
 

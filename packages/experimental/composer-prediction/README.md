@@ -62,7 +62,7 @@ This section explains the plugin's design; the observable behavior is fully cove
 
 ### Design concept
 
-Everything is decided at the committed `turn/end` and frozen, so the replay is exactly the conversation that turn closed; nothing is re-derived after the first `await`. The output filter is a port of the Hermes `tui_gateway/suggest_predict.py` rules with Unicode-aware boundaries and Python-compatible code-point lengths.
+Everything is decided at the committed `turn/end` and frozen, so the replay is exactly the conversation that turn closed; nothing is re-derived after the first `await`. The output filter is a port of the Hermes `tui_gateway/suggest_predict.py` rules with Unicode-aware word boundaries, except the English silence phrases that keep ASCII `\b`, and with Python-compatible code-point lengths.
 
 ### Source map
 

@@ -4,9 +4,10 @@
  *
  * Ported from Hermes `tui_gateway/suggest_predict.py`; rule order is verdict order, so the first
  * failing rule is the reported reason. Python's `\w`, `\b`, and `\W` are Unicode-aware while
- * JavaScript's are ASCII-only, so the port spells out the Unicode-aware forms instead. Python's
- * `len()` counts code points, so text length comes from {@link codePointLength} rather than from
- * UTF-16 `String#length`.
+ * JavaScript's are ASCII-only, so the port spells out the Unicode-aware forms instead, except the
+ * English silence phrases in {@link META_RE}, which keep the ASCII `\b` and can therefore match
+ * inside a non-ASCII word. Python's `len()` counts code points, so text length comes from
+ * {@link codePointLength} rather than from UTF-16 `String#length`.
  *
  * @module @deepseek-ai/dsh-experimental-composer-prediction/filter
  */
