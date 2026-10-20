@@ -103,6 +103,7 @@ export type {
 } from './contract/input.ts'
 export type { ArbitrateKey, ArbitrateOutcome, DraftInput, DraftReference, DraftSnapshot, ReferenceInsert, TokenSpan } from './contract/draft-editor.ts'
 export type { ComposerBlock, ComposerBlocks } from './contract/composer-blocks.ts'
+export type { ComposerSuggestionProvider, ComposerSuggestions } from './contract/composer-suggestions.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {

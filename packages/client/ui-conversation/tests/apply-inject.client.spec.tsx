@@ -511,6 +511,22 @@ describe('Conversation inject API', () => {
     await b.runtime.dispose()
   })
 
+  it('binds the composer suggestion to the Session registry and follows provider withdrawal', async () => {
+    const b = await bench()
+    expect(b.composerApi(undefined).hooks.composerSuggestion.getSnapshot()).toBeUndefined()
+    expect(b.composerApi(ROOT).hooks.composerSuggestion.getSnapshot()).toBeUndefined()
+
+    const dispose = b.runtime.ctx.conversation.suggestions.register({
+      forSession: () => createSnapshotStore<string | undefined>('run the tests'),
+    })
+    expect(b.composerApi(ROOT).hooks.composerSuggestion.getSnapshot()).toBe('run the tests')
+    expect(b.composerApi(undefined).hooks.composerSuggestion.getSnapshot()).toBeUndefined()
+
+    dispose()
+    expect(b.composerApi(ROOT).hooks.composerSuggestion.getSnapshot()).toBeUndefined()
+    await b.runtime.dispose()
+  })
+
   it('moves a draft only when Workspace navigation changes Session', async () => {
     const b = await bench()
     const resident = b.residentApi(ROOT)

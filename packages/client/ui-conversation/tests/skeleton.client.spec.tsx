@@ -297,6 +297,7 @@ function mount(
           useNotices={bindSnapshotSelector(wiring.notices)}
           useLexicon={bindSnapshotSelector(wiring.lexicon)}
           useMenuLauncher={bindSnapshotSelector(createSnapshotStore<string | null>(null))}
+          useComposerSuggestion={bindSnapshotSelector(createSnapshotStore<string | undefined>(undefined))}
           stop={stop}
           t={t}
           renderSlot={((key: string, seatOwner: object) => {
