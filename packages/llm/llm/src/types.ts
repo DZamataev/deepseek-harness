@@ -563,9 +563,9 @@ export interface GenerateOptions {
    */
   sessionId?: Branded<'SessionId'>
   /**
-   * Provider-neutral classification for an auxiliary model call. Adapters may
-   * map the purpose to model-hidden transport metadata. Ordinary conversation
-   * requests leave it unset.
+   * Auxiliary-request attribution: `compaction`, `session-title`, or
+   * `composer-prediction` (a next-user-message guess for the composer). Absent
+   * on agent-loop requests. Adapters may forward it; it never changes request content.
    */
-  purpose?: 'compaction' | 'session-title'
+  purpose?: 'compaction' | 'session-title' | 'composer-prediction'
 }
