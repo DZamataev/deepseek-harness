@@ -250,13 +250,17 @@ export const InputBar = memo(function InputBar({
 
   // The keymap handlers read live bar state through this ref so the editor
   // registration survives re-renders without re-arming per keystroke.
-  const gate = useRef({
+  const gate = useRef<Parameters<typeof installDraftKeymap>[2]['current']>({
     locked, machineBusy, canSteerQueue, running, steeringAvailable, busyEnter,
     intakeFiles, uploadsPending, showToast, t, canAcceptDrop,
+    suggestion: undefined,
+    acceptSuggestion: (text) => { inputActions?.setDraft(text) },
   })
   gate.current = {
     locked, machineBusy, canSteerQueue, running, steeringAvailable, busyEnter,
     intakeFiles, uploadsPending, showToast, t, canAcceptDrop,
+    suggestion: undefined,
+    acceptSuggestion: (text) => { inputActions?.setDraft(text) },
   }
 
   useEffect(() => {

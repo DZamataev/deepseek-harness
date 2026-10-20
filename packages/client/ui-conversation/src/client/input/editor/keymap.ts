@@ -1,7 +1,8 @@
 /**
  * Composer keymap over the Lexical command layer: menu arbitration
- * (arrows/escape/enter), space adjudication, the Enter submit gesture, and
- * paste routing. Registered at CRITICAL priority so it decides before
+ * (arrows/escape/enter), space adjudication, the Enter submit gesture,
+ * suggestion acceptance (plain Tab / Right arrow), and paste routing.
+ * Registered at CRITICAL priority so it decides before
  * @lexical/plain-text's own Enter/paste defaults; a handler returning false
  * falls through to those defaults (Shift+Enter's line break, ordinary
  * spaces, text paste the bar routes itself).
@@ -16,8 +17,8 @@
  */
 import type { LexicalEditor } from 'lexical'
 import {
-  COMMAND_PRIORITY_CRITICAL, KEY_ARROW_DOWN_COMMAND, KEY_ARROW_UP_COMMAND, KEY_ENTER_COMMAND,
-  KEY_ESCAPE_COMMAND, KEY_SPACE_COMMAND, KEY_TAB_COMMAND, PASTE_COMMAND,
+  COMMAND_PRIORITY_CRITICAL, KEY_ARROW_DOWN_COMMAND, KEY_ARROW_RIGHT_COMMAND, KEY_ARROW_UP_COMMAND,
+  KEY_ENTER_COMMAND, KEY_ESCAPE_COMMAND, KEY_SPACE_COMMAND, KEY_TAB_COMMAND, PASTE_COMMAND,
 } from 'lexical'
 import { mergeRegister } from '@lexical/utils'
 import type { ArbitrateKey, ArbitrateOutcome } from '../../contract/draft-editor.ts'
@@ -42,6 +43,11 @@ export interface ComposerKeymapHandlers {
   intakeFiles(files: readonly File[], directories?: ReadonlySet<File>): void
   /** Pasted plain text (sanitized insertion through the shell). */
   pasteText(text: string): void
+  /**
+   * Accept the visible composer suggestion into the empty draft.
+   * @returns true when the suggestion was written and the keystroke is consumed.
+   */
+  acceptSuggestion(): boolean
 }
 
 /** Composition state a keydown can trust (see the module doc's Safari note). */
@@ -89,6 +95,17 @@ export function registerComposerKeymap(editor: LexicalEditor, handlers: Composer
     return false
   }
 
+  // Only the unmodified key accepts: application shortcuts and text selection
+  // keep their native gestures, and a composition-committing key belongs to
+  // the IME.
+  const acceptPlain = (event: KeyboardEvent | null): boolean => {
+    if (event === null || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return false
+    if (isComposingEvent(event, recentlyComposing)) return false
+    if (!handlers.acceptSuggestion()) return false
+    event.preventDefault()
+    return true
+  }
+
   return mergeRegister(
     editor.registerRootListener((root, prevRoot) => {
       prevRoot?.removeEventListener('compositionstart', onCompositionStart)
@@ -104,15 +121,16 @@ export function registerComposerKeymap(editor: LexicalEditor, handlers: Composer
     editor.registerUpdateListener(syncComposition),
     editor.registerCommand(KEY_ARROW_UP_COMMAND, arrow('up'), COMMAND_PRIORITY_CRITICAL),
     editor.registerCommand(KEY_ARROW_DOWN_COMMAND, arrow('down'), COMMAND_PRIORITY_CRITICAL),
-    // Tab settles the highlighted completion and passes without one, keeping
-    // native focus traversal; Shift+Tab leaves the menu like Escape whenever it
-    // is open, highlight or not, so the two Tab gestures never disagree about
-    // consuming the draft.
-    editor.registerCommand(
-      KEY_TAB_COMMAND,
-      event => arrow(event.shiftKey ? 'tabBack' : 'tab')(event),
-      COMMAND_PRIORITY_CRITICAL,
-    ),
+    // Tab settles the highlighted completion; with no completion to settle, a
+    // plain Tab accepts the visible suggestion and otherwise keeps native focus
+    // traversal. Shift+Tab leaves the menu like Escape whenever it is open.
+    editor.registerCommand(KEY_TAB_COMMAND, (event) => {
+      if (event.shiftKey) return arrow('tabBack')(event)
+      if (arrow('tab')(event)) return true
+      return acceptPlain(event)
+    }, COMMAND_PRIORITY_CRITICAL),
+    // Lexical dispatches Shift+ArrowRight here too; only the plain key accepts.
+    editor.registerCommand(KEY_ARROW_RIGHT_COMMAND, event => acceptPlain(event), COMMAND_PRIORITY_CRITICAL),
     editor.registerCommand(KEY_ESCAPE_COMMAND, (event) => {
       // Escape layering: an open overlay closes; claimed without an overlay
       // does NOT release (deleting the command chip is the only exit gesture).
