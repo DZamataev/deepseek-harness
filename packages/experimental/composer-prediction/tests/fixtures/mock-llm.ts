@@ -2,7 +2,7 @@
 
 import { writeFile } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
-import { LlmAdapter, type GenerateOptions, type StreamChunk, type TokenUsage } from '@deepseek-ai/dsh-llm'
+import { LlmAdapter, type GenerateOptions, type RequestMessage, type StreamChunk, type TokenUsage } from '@deepseek-ai/dsh-llm'
 
 /** One request the fixture adapter observed, for post-run assertions. */
 export interface MockRequestRecord {
@@ -12,6 +12,8 @@ export interface MockRequestRecord {
   readonly provider: string
   /** Routed model. */
   readonly model: string
+  /** Conversation the provider received, in order and unprojected. */
+  readonly messages: readonly RequestMessage[]
   /** Number of conversation messages the provider received. */
   readonly messageCount: number
 }
@@ -21,7 +23,7 @@ const PREDICTION_TEXT = 'run the tests'
 /** Usage of the prediction request: a warm cache read makes the estimate fit any limit. */
 const PREDICTION_USAGE: TokenUsage = { inputTokens: 5, outputTokens: 3, cacheReadTokens: 100 }
 /** The reply every other request receives. */
-const MAIN_TEXT = 'done'
+export const MAIN_REPLY_TEXT = 'done'
 /** Usage of a main request; a cache read keeps the planner's estimate at the reply size. */
 const MAIN_USAGE: TokenUsage = { inputTokens: 10, outputTokens: 1, cacheReadTokens: 50 }
 
@@ -42,6 +44,7 @@ class ComposerPredictionMockAdapter extends LlmAdapter {
       purpose: options.purpose ?? null,
       provider: options.provider,
       model: options.model,
+      messages: [...options.messages],
       messageCount: options.messages.length,
     })
     const snapshot = JSON.stringify(this.#requests, null, 2)
@@ -52,7 +55,7 @@ class ComposerPredictionMockAdapter extends LlmAdapter {
   async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     await this.#record(options)
     const prediction = options.purpose === 'composer-prediction'
-    const text = prediction ? PREDICTION_TEXT : MAIN_TEXT
+    const text = prediction ? PREDICTION_TEXT : MAIN_REPLY_TEXT
     const usage = prediction ? PREDICTION_USAGE : MAIN_USAGE
     yield { type: 'block-start', index: 0, blockType: 'text' }
     yield { type: 'text-delta', index: 0, text }

@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { pluginRecordOf, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
-import type { MockRequestRecord } from './fixtures/mock-llm.ts'
+import { MAIN_REPLY_TEXT, type MockRequestRecord } from './fixtures/mock-llm.ts'
+import { PREDICTION_INSTRUCTION } from '../src/instruction.ts'
 
 const driver = fileURLToPath(new URL(
   './fixtures/driver.ts',
@@ -74,11 +75,18 @@ describe('composer prediction through the production headless profile', () => {
     expect(predictionRequests).toHaveLength(1)
     const prediction = predictionRequests[0]!
 
-    // The replay carries the second main request's route and conversation, then
-    // the assistant reply and the prediction instruction.
+    // The replay carries the second main request's conversation verbatim, then
+    // the assistant reply, then the prediction instruction.
     expect(prediction.provider).toBe(secondMain.provider)
     expect(prediction.model).toBe(secondMain.model)
     expect(prediction.messageCount).toBe(secondMain.messageCount + 2)
+    expect(prediction.messages.slice(0, secondMain.messages.length)).toEqual(secondMain.messages)
+    const replayedReply = prediction.messages[secondMain.messages.length]!
+    expect(replayedReply.role).toBe('assistant')
+    expect(replayedReply.content).toEqual([{ type: 'text', text: MAIN_REPLY_TEXT }])
+    const instruction = prediction.messages.at(-1)!
+    expect(instruction.role).toBe('user')
+    expect(instruction.content).toEqual([{ type: 'text', text: PREDICTION_INSTRUCTION }])
 
     expect(pluginRecordOf(requestEvents[0]!)?.data).toMatchObject({
       turn: 2,
