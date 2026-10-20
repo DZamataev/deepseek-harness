@@ -14,7 +14,7 @@ import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { createPortal } from 'react-dom'
-import { $getRoot, $isTextNode } from 'lexical'
+import { $getRoot, $getSelection, $isRangeSelection, $isTextNode } from 'lexical'
 import {
   allowAllAccess, bindSnapshotSelector, conversationSnapshot as conversationFixture, makeTranslate, RemoteError,
   sessionSnapshot as sessionFixture,
@@ -94,6 +94,8 @@ interface BenchOptions {
   steerQueue?: () => void
   variant?: 'hero' | 'composer'
   placeholder?: string
+  /** The current Session's composer suggestion text (absent = no provider). */
+  suggestion?: string
   t?: InputBarProps['t']
   accessory?: React.ReactNode
   overlay?: React.ReactNode
@@ -160,6 +162,7 @@ function bench(over?: BenchOptions) {
   const stop = vi.fn()
   const removeAttachment = vi.fn((id: DraftAttachmentId) => { shell.removeAttachment(id) })
   const menuLauncher = createSnapshotStore<string | null>(over?.commandMenuOpen === true ? 'command' : null)
+  const suggestion = createSnapshotStore<string | undefined>(over?.suggestion)
   const busyEnter = createSnapshotStore<'queue' | 'steer'>(over?.busyEnter ?? 'queue')
   const stopShortcut = createSnapshotStore<readonly string[]>(['Esc', 'Esc'])
   const slotCalls: { key: string; owner: unknown }[] = []
@@ -215,7 +218,7 @@ function bench(over?: BenchOptions) {
     useNotices: bindSnapshotSelector(shell.notices),
     useLexicon: bindSnapshotSelector(shell.lexicon),
     useMenuLauncher: bindSnapshotSelector(menuLauncher),
-    useComposerSuggestion: bindSnapshotSelector(createSnapshotStore<string | undefined>(undefined)),
+    useComposerSuggestion: bindSnapshotSelector(suggestion),
     stop,
     // Mirrors the real lookup chain (conversation namespace, then common).
     t: over?.t ?? makeTranslate(zh, commonZh),
@@ -255,7 +258,7 @@ function bench(over?: BenchOptions) {
   const interruptButton = view.container.querySelector<HTMLButtonElement>('button[aria-label="停止生成"]')
   return {
     view, textarea, button, interruptButton, props, sink, shell, wiring: shell, session, stop, removeAttachment, slotCalls,
-    menuLauncher, busyEnter, stopShortcut,
+    menuLauncher, busyEnter, stopShortcut, suggestion,
     steerQueue: over?.steerQueue,
     get placeholder() { return placeholderOf(view.container) },
     get inputDisabled() { return textarea.getAttribute('aria-disabled') === 'true' },
@@ -422,6 +425,105 @@ describe('composer placeholder visibility', () => {
     expect(view.container.querySelector('[data-composer-placeholder]')).toBeNull()
     writeDraft(shell, '')
     expect(view.container.querySelector('[data-composer-placeholder]')).not.toBeNull()
+  })
+})
+
+describe('composer suggestion', () => {
+  const suggestion = 'run the tests'
+
+  it('shows the suggestion in place of the default placeholder with a Tab hint', () => {
+    const b = bench({ suggestion })
+    const ghost = b.view.container.querySelector('[data-composer-placeholder]')
+    expect(ghost?.textContent).toContain(suggestion)
+    expect(b.view.container.querySelector('[data-composer-suggestion-key]')?.textContent).toBe('Tab')
+    // The accessible name stays the ordinary placeholder copy; the suggestion
+    // and its key instruction ride aria-describedby instead.
+    expect(b.textarea.getAttribute('aria-label')).toBe(zh['placeholder.default'])
+    const describedBy = b.textarea.getAttribute('aria-describedby')
+    expect(describedBy).toBeTruthy()
+    expect(document.getElementById(describedBy!)?.textContent)
+      .toBe(zh['suggestion.description'].replace('{text}', suggestion))
+  })
+
+  it('outranks the plan placeholder', () => {
+    const b = bench({ suggestion, plan: { active: true, pending: false } })
+    expect(b.view.container.querySelector('[data-composer-placeholder]')?.textContent).toContain(suggestion)
+  })
+
+  it('yields to an owner placeholder', () => {
+    const b = bench({ suggestion, placeholder: 'owner copy' })
+    expect(b.view.container.querySelector('[data-composer-placeholder]')?.textContent).toBe('owner copy')
+    expect(b.view.container.querySelector('[data-composer-suggestion-key]')).toBeNull()
+  })
+
+  it('yields to the steer-queue hint', () => {
+    const b = bench({ suggestion, running: true, queue: [row('q-1')], steerQueue: vi.fn() })
+    expect(b.view.container.querySelector('[data-composer-placeholder]')?.textContent)
+      .toBe(zh['placeholder.steerQueue'])
+    expect(b.view.container.querySelector('[data-composer-suggestion-key]')).toBeNull()
+  })
+
+  it('hides while the Session runs', () => {
+    const b = bench({ suggestion, running: true })
+    expect(b.view.container.querySelector('[data-composer-suggestion-key]')).toBeNull()
+    expect(b.view.container.querySelector('[data-composer-placeholder]')?.textContent)
+      .toBe(zh['placeholder.default'])
+  })
+
+  it('hides while the draft or an attachment holds the composer, and returns when cleared', () => {
+    const b = bench({
+      suggestion,
+      attachments: [{
+        kind: 'image' as const, id: 'draft-1' as DraftAttachmentId,
+        file: new File(['x'], 'draft.png', { type: 'image/png' }), previewUrl: 'blob:draft-1',
+      }],
+    })
+    expect(b.view.container.querySelector('[data-composer-suggestion-key]')).toBeNull()
+    act(() => { b.shell.removeAttachment('draft-1' as DraftAttachmentId) })
+    expect(b.view.container.querySelector('[data-composer-suggestion-key]')).not.toBeNull()
+    act(() => { b.shell.setDraft('x') })
+    expect(b.view.container.querySelector('[data-composer-suggestion-key]')).toBeNull()
+    act(() => { b.shell.setDraft('') })
+    expect(b.view.container.querySelector('[data-composer-suggestion-key]')).not.toBeNull()
+  })
+
+  it('hides while a command menu is open', () => {
+    const b = bench({ suggestion, commandMenuOpen: true })
+    expect(b.view.container.querySelector('[data-composer-suggestion-key]')).toBeNull()
+  })
+
+  it('Tab in the focused empty editor writes the suggestion without submitting', () => {
+    const b = bench({ suggestion })
+    b.textarea.focus()
+    fireEvent.keyDown(b.textarea, { key: 'Tab', keyCode: 9 })
+    // The real draft, not just the shell snapshot: the editor document holds
+    // the accepted text with the caret after it.
+    expect(b.shell.snapshot.draft).toBe(suggestion)
+    expect(b.textarea.textContent).toBe(suggestion)
+    const selection = b.shell.editor.getEditorState().read(() => {
+      const selected = $getSelection()
+      return $isRangeSelection(selected)
+        ? { anchor: selected.anchor.offset, focus: selected.focus.offset }
+        : null
+    })
+    expect(selection).toEqual({ anchor: suggestion.length, focus: suggestion.length })
+    expect(b.sink).not.toHaveBeenCalled()
+  })
+
+  it('clicking the key hint accepts the suggestion and keeps editor focus', () => {
+    const b = bench({ suggestion })
+    const hint = b.view.container.querySelector<HTMLElement>('[data-composer-suggestion-key]')!
+    expect(fireEvent.mouseDown(hint)).toBe(false)
+    expect(document.activeElement).toBe(b.textarea)
+    fireEvent.click(hint)
+    expect(b.shell.snapshot.draft).toBe(suggestion)
+    expect(b.sink).not.toHaveBeenCalled()
+  })
+
+  it('without a suggestion Tab keeps native traversal', () => {
+    const b = bench()
+    expect(fireEvent.keyDown(b.textarea, { key: 'Tab', keyCode: 9 })).toBe(true)
+    expect(b.shell.snapshot.draft).toBe('')
   })
 })
 

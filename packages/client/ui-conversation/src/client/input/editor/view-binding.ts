@@ -159,11 +159,11 @@ export function installDraftKeymap(
 }
 
 /**
- * Keep a toolbar press from moving focus away from the draft.
- * @param event - the toolbar button's mouse event.
+ * Keep a pointer press on a composer affordance from moving focus away from the draft.
+ * @param event - the pressed element's mouse event.
  * @param editor - the borrowed editor, absent in the inert view.
  */
-export function keepDraftFocus(event: MouseEvent<HTMLButtonElement>, editor: LexicalEditor | null): void {
+export function keepDraftFocus(event: MouseEvent<HTMLElement>, editor: LexicalEditor | null): void {
   event.preventDefault()
   editor?.getRootElement()?.focus({ preventScroll: true })
 }

@@ -48,7 +48,7 @@ export const InputBar = memo(function InputBar({
   retryFileUpload,
   toggleCommandMenu, stop, t,
   renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher, useStopShortcut,
-  useProjection, sessionId, variant, disabled: inert = false, blocked,
+  useProjection, useComposerSuggestion, sessionId, variant, disabled: inert = false, blocked,
   workspacePickerOpen = false, onRequestWorkspace,
   placeholder, accessory,
 }: InputBarProps) {
@@ -58,6 +58,8 @@ export const InputBar = memo(function InputBar({
   const stopKeys = useStopShortcut(keys => keys)
   void useLexicon // hook seat stays bound by the inject compartment; text-ref decoration rides the shell's editor transforms
   const commandMenuOpen = useMenuLauncher(source => source === 'command')
+  // Unconditional hook: the visible gate below only narrows this value.
+  const suggestionText = useComposerSuggestion(text => text)
   const [activity, setActivity] = useState(false)
   useEffect(() => { setActivity(false) }, [sessionId])
   const promptError = useSession(s => s.promptError) ?? null
@@ -156,6 +158,35 @@ export const InputBar = memo(function InputBar({
   const canSteerQueue = !locked && !machineBusy && !commandMenuOpen && empty && running && steeringAvailable
     && input.queue.length > 0
 
+  // Claim ghost hint: rendered by CSS as generated content after the last
+  // paragraph while the claim's args are blank (a hint implies a single-line
+  // token draft). The translated per-command hint wins over the claim's own.
+  const claimActive = (input?.phase === 'claimed' || input?.phase === 'submitting')
+    && input.claim !== undefined && draft.startsWith(input.claim.token)
+  const rawHint = claimActive && input.claim.hint !== undefined
+    && draft.slice(input.claim.token.length).trim() === ''
+    ? input.claim.hint
+    : null
+  const hint = ((): string | null => {
+    if (rawHint === null) return null
+    const commandName = input?.claim?.name ?? ''
+    const hintKey = `hint.${commandName === 'goal' && hasGoal ? 'goal.active' : commandName}`
+    // Dynamic lookup by claimed command name: unknown commands miss the
+    // dictionary and keep the machine's own hint, so the call is wide.
+    const translated = (t as Translate)(hintKey)
+    return translated !== hintKey ? translated : rawHint
+  })()
+
+  // The suggestion is a placeholder, never draft text: the empty composer
+  // shows it only where no owner placeholder, steer hint, run, menu, claim,
+  // attachment, or machine lock owns the surface. Owner placeholders and the
+  // steer hint outrank it; typing hides it, clearing shows it again.
+  // `disabled` already folds in a parent-offline child.
+  const suggestion = placeholder === undefined && !disabled && !canSteerQueue
+    && !running && !machineBusy && !commandMenuOpen && !claimActive
+    && draft === '' && attachments.length === 0
+    ? suggestionText : undefined
+
   useEffect(() => {
     if (input === undefined || inputActions === undefined) return
     if (attachments.length !== input.attachmentIds.length) {
@@ -253,13 +284,13 @@ export const InputBar = memo(function InputBar({
   const gate = useRef<Parameters<typeof installDraftKeymap>[2]['current']>({
     locked, machineBusy, canSteerQueue, running, steeringAvailable, busyEnter,
     intakeFiles, uploadsPending, showToast, t, canAcceptDrop,
-    suggestion: undefined,
+    suggestion,
     acceptSuggestion: (text) => { inputActions?.setDraft(text) },
   })
   gate.current = {
     locked, machineBusy, canSteerQueue, running, steeringAvailable, busyEnter,
     intakeFiles, uploadsPending, showToast, t, canAcceptDrop,
-    suggestion: undefined,
+    suggestion,
     acceptSuggestion: (text) => { inputActions?.setDraft(text) },
   }
 
@@ -345,25 +376,6 @@ export const InputBar = memo(function InputBar({
     if (!empty && !disabled && !machineBusy && !uploadsPending) keyboard.submit(primarySubmitMode, 'click')
   }
 
-  // Claim ghost hint: rendered by CSS as generated content after the last
-  // paragraph while the claim's args are blank (a hint implies a single-line
-  // token draft). The translated per-command hint wins over the claim's own.
-  const claimActive = (input?.phase === 'claimed' || input?.phase === 'submitting')
-    && input.claim !== undefined && draft.startsWith(input.claim.token)
-  const rawHint = claimActive && input.claim.hint !== undefined
-    && draft.slice(input.claim.token.length).trim() === ''
-    ? input.claim.hint
-    : null
-  const hint = ((): string | null => {
-    if (rawHint === null) return null
-    const commandName = input?.claim?.name ?? ''
-    const hintKey = `hint.${commandName === 'goal' && hasGoal ? 'goal.active' : commandName}`
-    // Dynamic lookup by claimed command name: unknown commands miss the
-    // dictionary and keep the machine's own hint, so the call is wide.
-    const translated = (t as Translate)(hintKey)
-    return translated !== hintKey ? translated : rawHint
-  })()
-
   const placeholderText = placeholder ?? (parentOffline
     ? t('placeholder.parentOffline')
     : disabled
@@ -434,6 +446,12 @@ export const InputBar = memo(function InputBar({
           phase={input?.phase ?? 'inert'}
           placeholderText={placeholderText}
           ariaLabel={workspaceTrigger ? t('hero.chooseWorkspace') : placeholderText}
+          suggestion={suggestion === undefined ? undefined : {
+            text: suggestion,
+            keyLabel: t('suggestion.acceptKey'),
+            description: t('suggestion.description', { text: suggestion }),
+            onAccept: () => { inputActions?.setDraft(suggestion) },
+          }}
           workspaceTrigger={workspaceTrigger}
           workspacePickerOpen={workspacePickerOpen}
           onWorkspaceKeyDown={onWorkspaceKeyDown}
