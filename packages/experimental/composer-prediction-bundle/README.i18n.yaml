@@ -1,0 +1,43 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/experimental/composer-prediction-bundle/README.md
+/:
+  en: 9630274cac5284f3
+  zh: 60f7fa1ec5780556
+/deepseek-ai-dsh-experimental-composer-prediction-bundle:
+  en: 686916e6fae05265
+  zh: 125329d3697320e5
+/deepseek-ai-dsh-experimental-composer-prediction-bundle/summary:
+  en: 7f83ade34dc2c6b0
+  zh: d258b1929979865f
+/deepseek-ai-dsh-experimental-composer-prediction-bundle/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 97c8bce6f125b5b5
+/deepseek-ai-dsh-experimental-composer-prediction-bundle/use-this-package:
+  en: bbff250eba0f1b89
+  zh: b20a47f82d8ab6e0
+/deepseek-ai-dsh-experimental-composer-prediction-bundle/use-this-package/enable-it-in-plugins:
+  en: 7733a83116a91a32
+  zh: 8c9c55a801b74089
+/deepseek-ai-dsh-experimental-composer-prediction-bundle/use-this-package/what-you-get:
+  en: e1a208f4af96b643
+  zh: a9ebea533f68dccb
+/deepseek-ai-dsh-experimental-composer-prediction-bundle/understand-the-implementation:
+  en: 6dc8b1717e841bb9
+  zh: 01fe3785c749a64d
+/deepseek-ai-dsh-experimental-composer-prediction-bundle/further-exploration:
+  en: e788530e4a11ebea
+  zh: 423c3b7ec4320250
+/deepseek-ai-dsh-experimental-composer-prediction-bundle/model-experience:
+  en: bb63450a9d55c26a
+  zh: 6b333368f4f73245
+/deepseek-ai-dsh-experimental-composer-prediction-bundle/model-experience/kv-cache-effect:
+  en: 6bed7ba2b6bba817
+  zh: e3f23dbc50502f90
+/deepseek-ai-dsh-experimental-composer-prediction-bundle/known-limitations-and-deferred-work:
+  en: a4980d0523df3a75
+  zh: 3af2d9006eca519a
+/deepseek-ai-dsh-experimental-composer-prediction-bundle/known-limitations-and-deferred-work/dev-note:
+  en: e67f633dc6fe7773
+  zh: 3bb0c20c93f16f98

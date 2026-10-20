@@ -13,5 +13,7 @@ Shared Session event declarations and resolved schemas appear in the [Session pe
 
 | Record | Owner | Purpose | Payload and source |
 |---|---|---|---|
+| `plugin:composer-prediction/request` | `@deepseek-ai/dsh-experimental-composer-prediction` | Composer prediction request replayed from the Session's last routed request, retained before dispatch. | <code>PredictionRequestRecord</code> · [`packages/experimental/composer-prediction/src/types.ts`](../packages/experimental/composer-prediction/src/types.ts) |
+| `plugin:composer-prediction/result` | `@deepseek-ai/dsh-experimental-composer-prediction` | Composer prediction outcome for one request; absent when a newer turn superseded it. | <code>PredictionResultRecord</code> · [`packages/experimental/composer-prediction/src/types.ts`](../packages/experimental/composer-prediction/src/types.ts) |
 | `plugin:translator/request` | `@deepseek-ai/dsh-experimental-translator` | Provider-independent translation input, retained before dispatch. | <code>TranslationRequestRecord</code> · [`packages/experimental/translator/src/types.ts`](../packages/experimental/translator/src/types.ts) |
 | `plugin:translator/result` | `@deepseek-ai/dsh-experimental-translator` | Successful translation, retained before it is returned to the consumer. | <code>TranslationResultRecord</code> · [`packages/experimental/translator/src/types.ts`](../packages/experimental/translator/src/types.ts) |
