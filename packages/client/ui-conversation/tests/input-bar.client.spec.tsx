@@ -443,6 +443,12 @@ describe('composer suggestion', () => {
     expect(describedBy).toBeTruthy()
     expect(document.getElementById(describedBy!)?.textContent)
       .toBe(zh['suggestion.description'].replace('{text}', suggestion))
+    // The same hint is the touch acceptance control, discoverable by role and
+    // named with localized copy.
+    const accept = b.view.getByRole('button', { name: zh['suggestion.accept'].replace('{text}', suggestion) })
+    expect(accept.hasAttribute('data-composer-suggestion-key')).toBe(true)
+    // Out of the tab order: keyboard users accept from the editor instead.
+    expect(accept.tabIndex).toBe(-1)
   })
 
   it('outranks the plan placeholder', () => {
@@ -510,13 +516,14 @@ describe('composer suggestion', () => {
     expect(b.sink).not.toHaveBeenCalled()
   })
 
-  it('clicking the key hint accepts the suggestion and keeps editor focus', () => {
+  it('activating the key hint by role accepts the suggestion without submitting and keeps editor focus', () => {
     const b = bench({ suggestion })
-    const hint = b.view.container.querySelector<HTMLElement>('[data-composer-suggestion-key]')!
-    expect(fireEvent.mouseDown(hint)).toBe(false)
+    const accept = b.view.getByRole('button', { name: zh['suggestion.accept'].replace('{text}', suggestion) })
+    expect(fireEvent.mouseDown(accept)).toBe(false)
     expect(document.activeElement).toBe(b.textarea)
-    fireEvent.click(hint)
+    fireEvent.click(accept)
     expect(b.shell.snapshot.draft).toBe(suggestion)
+    expect(b.textarea.textContent).toBe(suggestion)
     expect(b.sink).not.toHaveBeenCalled()
   })
 

@@ -239,11 +239,13 @@
   padding-right: 44px;
 }
 
-/* The accepting key occupies the placeholder's trailing corner. The editor's
-   Tab gesture is the keyboard path; this hint is a pointer affordance only,
-   so it stays out of the tab order and the accessibility tree. Its 24px
-   minimum keeps a real target on touch, where no Tab key exists. */
+/* The accepting key occupies the placeholder's trailing corner. It is a real
+   button so screen-reader touch navigation can activate it, but it carries no
+   tab stop: the editor's Tab and Right arrow gestures are the keyboard path.
+   Native button chrome is reset to the keycap look, and its 24px minimum keeps
+   a real target on touch, where no Tab key exists. */
 .suggestionKey {
+  appearance: none;
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
@@ -252,7 +254,9 @@
   inset: 4px 8px auto auto;
   pointer-events: auto;
   cursor: pointer;
+  margin: 0;
   padding: 0 6px;
+  background-color: transparent;
   border-radius: var(--dsw-radius-xs);
   border: 1px solid var(--dsw-alias-border-l2);
   color: var(--dsw-alias-label-caption);
@@ -260,6 +264,12 @@
   font-size: 0.85em;
   line-height: 1.6;
   user-select: none;
+}
+
+/* The visible keycap inherits the button's metrics instead of the browser's
+   monospace <kbd> default. */
+.suggestionKeycap {
+  font: inherit;
 }
 
 /* An IME composition hides the placeholder layer; the hint leaves with it. */

@@ -20,6 +20,8 @@ export interface DraftSuggestion {
   readonly keyLabel: string
   /** Localized sentence naming the suggestion and its accept key for the accessible description. */
   readonly description: string
+  /** Localized accessible name of the accept control. */
+  readonly acceptLabel: string
   /** Write the suggestion into the draft without submitting. */
   readonly onAccept: () => void
 }
@@ -90,16 +92,21 @@ export function DraftEditor({
         {visibleSuggestion !== undefined && (
           <>
             <span id={suggestionId} className={css.srOnly}>{visibleSuggestion.description}</span>
-            {/* Pointer-only shortcut: the key itself already accepts from the
-                focused editor, so this hint stays out of the tab order and out
-                of the accessibility tree. */}
-            <kbd
-              aria-hidden
+            {/* Out of the tab order because the focused editor accepts with Tab
+                or Right arrow; still a real button so screen-reader touch
+                navigation reaches and activates it. The visible keycap is
+                decorative next to the localized accessible name. */}
+            <button
+              type="button"
+              tabIndex={-1}
               className={css.suggestionKey}
               data-composer-suggestion-key
+              aria-label={visibleSuggestion.acceptLabel}
               onMouseDown={(event) => { keepDraftFocus(event, editor) }}
               onClick={visibleSuggestion.onAccept}
-            >{visibleSuggestion.keyLabel}</kbd>
+            >
+              <kbd aria-hidden className={css.suggestionKeycap}>{visibleSuggestion.keyLabel}</kbd>
+            </button>
           </>
         )}
         <DecoratorPortals editor={workspaceTrigger ? null : editor} />

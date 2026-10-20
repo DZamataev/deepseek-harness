@@ -450,6 +450,7 @@ export const InputBar = memo(function InputBar({
             text: suggestion,
             keyLabel: t('suggestion.acceptKey'),
             description: t('suggestion.description', { text: suggestion }),
+            acceptLabel: t('suggestion.accept', { text: suggestion }),
             onAccept: () => { inputActions?.setDraft(suggestion) },
           }}
           workspaceTrigger={workspaceTrigger}
