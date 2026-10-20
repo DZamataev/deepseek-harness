@@ -78,6 +78,50 @@ describe('composer suggestion registry', () => {
     expect(source.active()).toBe(0)
   })
 
+  it('reads the provider source fresh while idle instead of retaining it', () => {
+    const registry = new ComposerSuggestionRegistry()
+    let calls = 0
+    registry.register({ forSession: () => createSnapshotStore<string | undefined>(`source ${calls += 1}`) })
+    const store = registry.storeFor(A)
+
+    expect(store.getSnapshot()).toBe('source 1')
+    expect(store.getSnapshot()).toBe('source 2')
+  })
+
+  it('drops the source at the last unsubscribe and re-resolves the next read', () => {
+    const registry = new ComposerSuggestionRegistry()
+    let calls = 0
+    registry.register({ forSession: () => createSnapshotStore<string | undefined>(`source ${calls += 1}`) })
+    const store = registry.storeFor(A)
+    const off = store.subscribe(() => {})
+
+    expect(store.getSnapshot()).toBe('source 1')
+    expect(store.getSnapshot()).toBe('source 1')
+    off()
+    expect(store.getSnapshot()).toBe('source 2')
+  })
+
+  it('re-subscribes and notifies when the provider is replaced while subscribed', () => {
+    const registry = new ComposerSuggestionRegistry()
+    const first = counted(createSnapshotStore<string | undefined>('first'))
+    const dispose = registry.register({ forSession: () => first.store })
+    const store = registry.storeFor(A)
+    const listener = vi.fn()
+    const off = store.subscribe(listener)
+    expect(first.active()).toBe(1)
+
+    dispose()
+    expect(first.active()).toBe(0)
+    expect(store.getSnapshot()).toBeUndefined()
+    const second = counted(createSnapshotStore<string | undefined>('second'))
+    registry.register({ forSession: () => second.store })
+    expect(second.active()).toBe(1)
+    expect(store.getSnapshot()).toBe('second')
+    expect(listener).toHaveBeenCalled()
+    off()
+    expect(second.active()).toBe(0)
+  })
+
   it('a withdrawn provider disposer called twice does not remove a newer provider', () => {
     const registry = new ComposerSuggestionRegistry()
     const dispose = registry.register({ forSession: () => createSnapshotStore<string | undefined>('old') })

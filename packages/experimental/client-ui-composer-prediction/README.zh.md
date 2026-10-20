@@ -43,9 +43,9 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-提供方通过 `ctx.sessions.binding(sessionId)` 读取单个 Session 的投影面，并按该面缓存每个 Session 的一个数据源。当面身份未变时返回缓存的数据源，因此读取它的 React store 不会因无关更新而重新订阅，而被替换的世代会重新订阅它的新面。
+提供方通过 `ctx.sessions.binding(sessionId)` 读取单个 Session 的投影面，并把映射后的数据源按该面对象缓存在注册 effect 拥有的 `WeakMap` 中。当面身份未变时返回缓存的数据源，因此读取它的 React store 不会因无关更新而重新订阅，而被替换的世代会重新订阅它的新面。缓存与注册都不保留以 SessionId 为键的条目：已关闭的 Session 一旦丢弃其投影面，这里就不会再让该面或其投影存储保持可达。
 
-本地守卫会把线上值收窄为有限的 `turn` 与非空的 `text`，之后文本才会到达 composer，因此由更新版本 Host 写入的投影无法放置不可用的占位提示。没有绑定或没有投影的 Session 共享一个空数据源，它在重复请求之间保持身份不变。注册与缓存位于同一个 `ctx.effect` 中，因此释放会撤回提供方并释放每个缓存的面对引用。
+本地守卫会把线上值收窄为有限的 `turn` 与非空的 `text`，之后文本才会到达 composer，因此由更新版本 Host 写入的投影无法放置不可用的占位提示。没有绑定或没有投影的 Session 共享一个空数据源，它在重复请求之间保持身份不变。注册与缓存位于同一个 `ctx.effect` 中，因此释放会撤回提供方，其保留的面随之可被回收。
 
 </details>
 

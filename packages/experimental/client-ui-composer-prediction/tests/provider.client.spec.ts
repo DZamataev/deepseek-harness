@@ -9,6 +9,7 @@ import { apply as hostApply } from '../src/index.ts'
 import { apply, inject } from '../src/client/index.ts'
 
 const A = SessionId('a')
+const B = SessionId('b')
 const MISSING = SessionId('missing')
 
 /** The only projection surface the plugin reads, at the narrowest type. */
@@ -70,29 +71,44 @@ class SessionsDouble {
 
 /** One Session's relay over the provider's current source, mirroring the product registry. */
 class Relay implements ObservableSnapshot<string | undefined> {
+  private provider: ComposerSuggestionProvider | undefined
   private source: ObservableSnapshot<string | undefined> | undefined
   private readonly listeners = new Set<() => void>()
   private release: (() => void) | undefined
 
-  /** @param source - the provider's source for this Session, or undefined without one. */
-  attach(source: ObservableSnapshot<string | undefined> | undefined): void {
-    if (source === this.source) return
+  /** @param sessionId - Session this relay stands for. */
+  constructor(private readonly sessionId: SessionId) {}
+
+  /** @param provider - the registered provider, or undefined without one. */
+  attach(provider: ComposerSuggestionProvider | undefined): void {
+    const changed = provider !== this.provider
+    this.provider = provider
+    if (this.listeners.size === 0) return
+    const source = provider?.forSession(this.sessionId)
+    if (source === this.source) {
+      if (changed) this.notify()
+      return
+    }
     this.release?.()
-    this.release = undefined
     this.source = source
-    if (this.listeners.size > 0) this.release = source?.subscribe(this.notify)
+    this.release = source?.subscribe(this.notify)
     this.notify()
   }
 
-  getSnapshot = (): string | undefined => this.source?.getSnapshot()
+  getSnapshot = (): string | undefined =>
+    (this.source ?? this.provider?.forSession(this.sessionId))?.getSnapshot()
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
-    if (this.listeners.size === 1) this.release = this.source?.subscribe(this.notify)
+    if (this.listeners.size === 1) {
+      this.source = this.provider?.forSession(this.sessionId)
+      this.release = this.source?.subscribe(this.notify)
+    }
     return () => {
       if (!this.listeners.delete(listener) || this.listeners.size > 0) return
       this.release?.()
       this.release = undefined
+      this.source = undefined
     }
   }
 
@@ -117,7 +133,7 @@ class SuggestionsDouble implements ComposerSuggestions {
   register(provider: ComposerSuggestionProvider): () => void {
     if (this.provider !== undefined) throw new Error('a composer suggestion provider is already registered')
     this.provider = provider
-    for (const [sessionId, relay] of this.relays) relay.attach(provider.forSession(sessionId))
+    for (const relay of this.relays.values()) relay.attach(provider)
     return () => {
       if (this.provider !== provider) return
       this.provider = undefined
@@ -128,10 +144,10 @@ class SuggestionsDouble implements ComposerSuggestions {
   storeFor(sessionId: SessionId): ObservableSnapshot<string | undefined> {
     let relay = this.relays.get(sessionId)
     if (relay === undefined) {
-      relay = new Relay()
+      relay = new Relay(sessionId)
       this.relays.set(sessionId, relay)
     }
-    relay.attach(this.provider?.forSession(sessionId))
+    relay.attach(this.provider)
     return relay
   }
 }
@@ -253,6 +269,39 @@ describe('composer prediction client plugin', () => {
     expect(bound).not.toBe(absent)
     expect(bound.getSnapshot()).toBe('bound')
     expect(registry.storeFor(A).getSnapshot()).toBe('bound')
+  })
+
+  it('keys the cache by projection face rather than by SessionId', async () => {
+    const { ctx, registry, sessions } = fixture()
+    const shared = createSnapshotStore<unknown>({ turn: 1, text: 'shared' })
+    sessions.set(A, shared)
+    sessions.set(B, shared)
+    await ctx.plugin({ inject, apply })
+    const provider = providerOf(registry)
+
+    // One face identifies one mapped source even across Session ids.
+    expect(provider.forSession(A)).toBe(provider.forSession(B))
+    const replacement = createSnapshotStore<unknown>({ turn: 2, text: 'replacement' })
+    sessions.set(A, replacement)
+    expect(provider.forSession(A)).not.toBe(provider.forSession(B))
+  })
+
+  it('returns the absent source once a closed Session\'s binding is gone', async () => {
+    const { ctx, registry, sessions } = fixture()
+    sessions.set(A, createSnapshotStore<unknown>({ turn: 1, text: 'now' }))
+    await ctx.plugin({ inject, apply })
+    const provider = providerOf(registry)
+    expect(provider.forSession(A).getSnapshot()).toBe('now')
+
+    sessions.clear(A)
+    const absent = provider.forSession(A)
+    expect(absent).toBe(provider.forSession(MISSING))
+    expect(absent.getSnapshot()).toBeUndefined()
+    // A later Session object resolves its own face instead of reusing the dropped one.
+    sessions.set(A, createSnapshotStore<unknown>({ turn: 2, text: 'again' }))
+    expect(provider.forSession(A)).not.toBe(absent)
+    expect(provider.forSession(A).getSnapshot()).toBe('again')
+    expect(registry.storeFor(A).getSnapshot()).toBe('again')
   })
 
   it('reports nothing for a Session without a binding', async () => {

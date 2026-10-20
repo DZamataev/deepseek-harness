@@ -43,9 +43,9 @@ The seam accepts one provider, so loading this plugin beside another suggestion 
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The provider reads one Session's projection face through `ctx.sessions.binding(sessionId)` and caches one source per Session keyed by that face. The cached source is returned while the face identity is unchanged, so a React store reading it does not resubscribe on unrelated updates, and a replaced generation re-subscribes to its new face.
+The provider reads one Session's projection face through `ctx.sessions.binding(sessionId)` and caches the mapped source by that face object in a `WeakMap` owned by the registration effect. The cached source is returned while the face identity is unchanged, so a React store reading it does not resubscribe on unrelated updates, and a replaced generation re-subscribes to its new face. Neither the cache nor the registration holds a SessionId-keyed entry: once a closed Session drops its projection face, nothing here keeps the face or its projection store reachable.
 
-A local guard narrows the wire value to a finite `turn` and a non-empty `text` before any text reaches the composer, so a projection written by a newer Host build cannot place an unusable placeholder. Sessions without a binding or without the projection share one empty source, which keeps its identity across repeated requests. The registration and the cache live in one `ctx.effect`, so disposal withdraws the provider and releases every cached face reference.
+A local guard narrows the wire value to a finite `turn` and a non-empty `text` before any text reaches the composer, so a projection written by a newer Host build cannot place an unusable placeholder. Sessions without a binding or without the projection share one empty source, which keeps its identity across repeated requests. The registration and the cache live in one `ctx.effect`, so disposal withdraws the provider and its retained faces become collectible.
 
 </details>
 

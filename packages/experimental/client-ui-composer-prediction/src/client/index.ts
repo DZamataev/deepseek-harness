@@ -1,7 +1,6 @@
 /** Feeds the composer suggestion seam from the Host `composerPrediction` projection. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
 // Type-only: pulls the Conversation service's `suggestions` seam.
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: pulls the Session Controller service whose projections carry the suggestion.
@@ -53,35 +52,26 @@ function textOf(face: ObservableSnapshot<unknown>): ObservableSnapshot<string | 
   }
 }
 
-/** One cached per-Session source and the face it was derived from. */
-interface CachedSource {
-  readonly face: ObservableSnapshot<unknown> | undefined
-  readonly source: ObservableSnapshot<string | undefined>
-}
-
 /**
- * Register the prediction-backed composer suggestion provider. The registry
- * re-attaches on every inject, so a Session keeps one source until its face
- * changes and a replaced generation re-subscribes to the new one.
+ * Register the prediction-backed composer suggestion provider. Sources are
+ * cached by projection face, so a Session keeps one source while its face
+ * stands and a closed Session's face stays collectible with its binding.
  * @param ctx - client plugin context.
  */
 export function apply(ctx: Context): void {
-  // Plugin-owned cache: module-level state would outlive this fiber and hold replaced faces.
-  const cache = new Map<SessionId, CachedSource>()
-  ctx.effect(() => {
-    const withdraw = ctx.conversation.suggestions.register({
-      forSession: (sessionId) => {
-        const face = ctx.sessions.binding(sessionId)?.session.projections.faceOf(PROJECTION_KEY)
-        const cached = cache.get(sessionId)
-        if (cached !== undefined && cached.face === face) return cached.source
-        const source = face === undefined ? NO_SUGGESTION : textOf(face)
-        cache.set(sessionId, { face, source })
-        return source
-      },
-    })
-    return () => {
-      withdraw()
-      cache.clear()
-    }
-  }, 'client-ui-composer-prediction: suggestions')
+  // Face-keyed by design: a SessionId-keyed cache would outlive a replaced or
+  // closed Session and retain its ProjectionValueStore for the page lifetime.
+  const sources = new WeakMap<ObservableSnapshot<unknown>, ObservableSnapshot<string | undefined>>()
+  ctx.effect(() => ctx.conversation.suggestions.register({
+    forSession: (sessionId) => {
+      const face = ctx.sessions.binding(sessionId)?.session.projections.faceOf(PROJECTION_KEY)
+      if (face === undefined) return NO_SUGGESTION
+      let source = sources.get(face)
+      if (source === undefined) {
+        source = textOf(face)
+        sources.set(face, source)
+      }
+      return source
+    },
+  }), 'client-ui-composer-prediction: suggestions')
 }
