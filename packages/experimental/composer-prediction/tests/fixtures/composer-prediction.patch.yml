@@ -1,0 +1,34 @@
+# Test-only patch over the shipped headless profile. The production bundle
+# layers own the agent services, tools, persistence plugin, and defaults; this
+# overlay supplies only the fixture model route and the optional bundle's Host
+# row with its shipped configuration.
+- id: headless-startup
+  disabled: true
+
+- id: headless-runner
+  disabled: true
+
+- id: agent-loop
+  config:
+    agents:
+      - id: main
+        provider: composer-prediction-mock
+        model: composer-prediction-mock
+        cwd: !!js process.cwd()
+
+- id: session-persistence-jsonl
+  config:
+    root: './.sessions'
+    compression: none
+
+- insert:
+    - id: composer-prediction-mock-llm
+      name: './mock-llm.ts'
+
+    - id: composer-prediction
+      name: '@deepseek-ai/dsh-experimental-composer-prediction'
+      config:
+        maxOutputTokens: 1024
+        timeoutMs: 60000
+        minAssistantMessages: 2
+        maxUncachedTokens: 10000
