@@ -308,6 +308,9 @@ importers:
       '@deepseek-ai/dsh-experimental-badge-skill-bundle':
         specifier: workspace:*
         version: link:../../packages/experimental/badge-skill-bundle
+      '@deepseek-ai/dsh-experimental-composer-prediction-bundle':
+        specifier: workspace:*
+        version: link:../../packages/experimental/composer-prediction-bundle
       '@deepseek-ai/dsh-experimental-cot-translation-bundle':
         specifier: workspace:*
         version: link:../../packages/experimental/cot-translation-bundle
@@ -906,6 +909,9 @@ importers:
       '@deepseek-ai/dsh-experimental-auto-review':
         specifier: workspace:*
         version: link:../../packages/experimental/auto-review
+      '@deepseek-ai/dsh-experimental-composer-prediction-bundle':
+        specifier: workspace:*
+        version: link:../../packages/experimental/composer-prediction-bundle
       '@deepseek-ai/dsh-experimental-cot-translation-bundle':
         specifier: workspace:*
         version: link:../../packages/experimental/cot-translation-bundle
@@ -8393,6 +8399,25 @@ importers:
       '@deepseek-ai/dsh-session-projection':
         specifier: workspace:*
         version: link:../../session/session-projection
+
+  packages/experimental/composer-prediction-bundle:
+    dependencies:
+      '@deepseek-ai/dsh-experimental-client-ui-composer-prediction':
+        specifier: workspace:*
+        version: link:../client-ui-composer-prediction
+      '@deepseek-ai/dsh-experimental-composer-prediction':
+        specifier: workspace:*
+        version: link:../composer-prediction
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:~
+        version: link:../../../vendor/include
+      js-yaml:
+        specifier: ^4.3.2
+        version: 4.3.2
 
   packages/experimental/computer-use-cua-driver-mcp:
     dependencies:

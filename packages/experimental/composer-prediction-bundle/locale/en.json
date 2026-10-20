@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Composer prediction",
+    "description": "After each reply, the agent's model suggests your next message; press Tab to use it. Each completed turn sends one extra, mostly cached, request."
+  }
+}

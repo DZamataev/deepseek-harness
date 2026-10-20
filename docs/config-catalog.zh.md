@@ -1006,6 +1006,32 @@ export interface CotTranslationPreferences {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-client-ui-cot-translation -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-composer-prediction -->
+<a id="deepseek-aidsh-experimental-composer-prediction"></a>
+
+## `@deepseek-ai/dsh-experimental-composer-prediction`
+
+- `inject`: `llm` · `agents` · `sessionProjections`
+- `source`: [`packages/experimental/composer-prediction/src/index.ts:31`](../packages/experimental/composer-prediction/src/index.ts)
+
+```ts config-catalog
+/** Prediction bounds, all required. */
+export interface Config extends PredictionConfig {}
+
+/** Bounds of one prediction request. */
+export interface PredictionConfig {
+  /** Output-token cap of one prediction request, reasoning included. */
+  readonly maxOutputTokens: number
+  /** End-to-end deadline of one prediction request in milliseconds. */
+  readonly timeoutMs: number
+  /** Assistant replies required before the first prediction. */
+  readonly minAssistantMessages: number
+  /** Largest estimated full-price input a prediction may replay. */
+  readonly maxUncachedTokens: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-composer-prediction -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-computer-use-cua-driver-mcp -->
 <a id="deepseek-aidsh-experimental-computer-use-cua-driver-mcp"></a>
 
@@ -4664,6 +4690,7 @@ export interface Config {
 | `@deepseek-ai/dsh-experimental-auto-review` | `approval` · `llm` · `permissionPresets` · `sessions` · `tools` · `workingDirectory` | [`packages/experimental/auto-review/src/index.ts`](../packages/experimental/auto-review/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-client-ui-agent-team` | — | [`packages/experimental/client-ui-agent-team/src/index.ts`](../packages/experimental/client-ui-agent-team/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-client-ui-claude-code-mods` | — | [`packages/experimental/client-ui-claude-code-mods/src/index.ts`](../packages/experimental/client-ui-claude-code-mods/src/index.ts) |
+| `@deepseek-ai/dsh-experimental-client-ui-composer-prediction` | — | [`packages/experimental/client-ui-composer-prediction/src/index.ts`](../packages/experimental/client-ui-composer-prediction/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-client-ui-voice-input` | — | [`packages/experimental/client-ui-voice-input/src/index.ts`](../packages/experimental/client-ui-voice-input/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-computer-use-cua-driver-native` | `computerUse` · `tools` · `systemPrompt` | [`packages/experimental/computer-use-cua-driver-native/src/index.ts`](../packages/experimental/computer-use-cua-driver-native/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-session-inspector` | — | [`packages/experimental/session-inspector/src/index.ts`](../packages/experimental/session-inspector/src/index.ts) |
@@ -4752,6 +4779,7 @@ export interface Config {
 | `@deepseek-ai/dsh-experimental-agent-team-profile` | — | [`packages/experimental/agent-team-profile/src/index.ts`](../packages/experimental/agent-team-profile/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-badge-skill-bundle` | — | [`packages/experimental/badge-skill-bundle/src/index.ts`](../packages/experimental/badge-skill-bundle/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-browser-use-runtime` | — | [`packages/experimental/browser-use-runtime/src/index.ts`](../packages/experimental/browser-use-runtime/src/index.ts) |
+| `@deepseek-ai/dsh-experimental-composer-prediction-bundle` | — | [`packages/experimental/composer-prediction-bundle/src/index.ts`](../packages/experimental/composer-prediction-bundle/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-cot-translation-bundle` | — | [`packages/experimental/cot-translation-bundle/src/index.ts`](../packages/experimental/cot-translation-bundle/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-inspector-profile` | — | [`packages/experimental/inspector-profile/src/index.ts`](../packages/experimental/inspector-profile/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-plugin-market-bundle` | — | [`packages/experimental/plugin-market-bundle/src/index.ts`](../packages/experimental/plugin-market-bundle/src/index.ts) |

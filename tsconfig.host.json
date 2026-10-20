@@ -239,6 +239,7 @@
   "references": [
     { "path": "./packages/experimental/client-ui-cot-translation/tsconfig.host.json" },
     { "path": "./packages/experimental/cot-translation-bundle" },
+    { "path": "./packages/experimental/composer-prediction-bundle" },
     { "path": "./packages/experimental/session-search" },
     { "path": "./packages/experimental/ralph-bundle" },
     { "path": "./packages/experimental/terminal-bundle" },

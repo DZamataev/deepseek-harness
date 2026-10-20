@@ -54,6 +54,9 @@ Promotion requires a named product role, documented public behavior and limitati
 | [`translator`](translator/README.md) | Anonymous Google and Bing text translation | `ctx.translator` |
 | [`client-ui-cot-translation`](client-ui-cot-translation/README.md) | Expanded reasoning translation and original-text controls | `ctx.cotTranslation` |
 | [`cot-translation-bundle`](cot-translation-bundle/README.md) | Default-disabled reasoning translation composition | — |
+| [`composer-prediction`](composer-prediction/README.md) | Next-user-message prediction published as a Session projection | — |
+| [`client-ui-composer-prediction`](client-ui-composer-prediction/README.md) | Composer placeholder showing the predicted next user message | — |
+| [`composer-prediction-bundle`](composer-prediction-bundle/README.md) | Default-disabled optional composer prediction composition | — |
 | [`speech-to-text`](speech-to-text/README.md) | Named speech recognition providers | `ctx.speechToText` |
 | [`speech-to-text-sensevoice`](speech-to-text-sensevoice/README.md) | Managed local SenseVoice inference | — |
 | [`api-speech-to-text`](api-speech-to-text/README.md) | Authenticated transient transcription Remote | `ctx.speechController` |
