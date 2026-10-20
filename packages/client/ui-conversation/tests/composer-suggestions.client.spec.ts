@@ -86,4 +86,14 @@ describe('composer suggestion registry', () => {
     dispose()
     expect(registry.storeFor(A).getSnapshot()).toBe('new')
   })
+
+  it('a stale disposer leaves a later registration of the same provider active', () => {
+    const registry = new ComposerSuggestionRegistry()
+    const provider = { forSession: () => createSnapshotStore<string | undefined>('same') }
+    const dispose = registry.register(provider)
+    dispose()
+    registry.register(provider)
+    dispose()
+    expect(registry.storeFor(A).getSnapshot()).toBe('same')
+  })
 })

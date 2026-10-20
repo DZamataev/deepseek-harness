@@ -5,6 +5,7 @@ import { createUserTextFixture } from './user-text-component-fixture.client.tsx'
 import { registerComposerKeymap } from '../src/client/input/editor/keymap.ts'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
+import type { Context } from '@deepseek-ai/cordis'
 import type { CommandContribution, CommandUiContract } from '@deepseek-ai/dsh-client-ui-commands/client'
 import type { ISession, SessionReference } from '@deepseek-ai/dsh-api-session-controller/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
@@ -523,6 +524,22 @@ describe('Conversation inject API', () => {
     expect(b.composerApi(undefined).hooks.composerSuggestion.getSnapshot()).toBeUndefined()
 
     dispose()
+    expect(b.composerApi(ROOT).hooks.composerSuggestion.getSnapshot()).toBeUndefined()
+    await b.runtime.dispose()
+  })
+
+  it('withdraws the composer suggestion when the contributing fiber is disposed', async () => {
+    const b = await bench()
+    const provider = { forSession: () => createSnapshotStore<string | undefined>('run the tests') }
+    const contributor = await b.runtime.mount({
+      inject: ['conversation'],
+      apply: (pluginCtx: Context) => {
+        pluginCtx.effect(() => pluginCtx.conversation.suggestions.register(provider))
+      },
+    })
+    expect(b.composerApi(ROOT).hooks.composerSuggestion.getSnapshot()).toBe('run the tests')
+
+    await contributor.dispose()
     expect(b.composerApi(ROOT).hooks.composerSuggestion.getSnapshot()).toBeUndefined()
     await b.runtime.dispose()
   })

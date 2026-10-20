@@ -17,7 +17,7 @@ export interface ComposerSuggestions {
   /**
    * Register the single suggestion provider.
    * @param provider - provider resolving per-Session sources.
-   * @returns idempotent disposer that withdraws this provider.
+   * @returns idempotent disposer scoped to this registration; it never withdraws a later one.
    * @throws Error when another provider is registered.
    */
   register(provider: ComposerSuggestionProvider): () => void

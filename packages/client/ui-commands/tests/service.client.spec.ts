@@ -151,6 +151,10 @@ async function bench(opts: BenchOptions = {}) {
         focus: () => { focuses.push(scopeOf(actx)) },
       }),
     },
+    suggestions: {
+      register: () => () => {},
+      storeFor: () => ({ getSnapshot: () => undefined, subscribe: () => () => {} }),
+    },
   })
   const fiber = ctx.plugin(CommandUiRuntime)
   await fiber.await()

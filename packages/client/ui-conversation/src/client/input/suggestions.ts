@@ -52,17 +52,20 @@ class SuggestionRelay implements ObservableSnapshot<string | undefined> {
 
 /** The per-Session composer-suggestion registry (one instance per plugin fiber). */
 export class ComposerSuggestionRegistry implements ComposerSuggestions {
-  private provider: ComposerSuggestionProvider | undefined
+  private registration: { readonly provider: ComposerSuggestionProvider } | undefined
   private readonly relays = new Map<SessionId, SuggestionRelay>()
 
   /** @inheritdoc */
   register(provider: ComposerSuggestionProvider): () => void {
-    if (this.provider !== undefined) throw new Error('a composer suggestion provider is already registered')
-    this.provider = provider
+    if (this.registration !== undefined) throw new Error('a composer suggestion provider is already registered')
+    // A registration token, not the provider identity, scopes the disposer:
+    // the same provider may be registered again after this one withdraws.
+    const token = { provider }
+    this.registration = token
     for (const [sessionId, relay] of this.relays) relay.attach(provider.forSession(sessionId))
     return () => {
-      if (this.provider !== provider) return
-      this.provider = undefined
+      if (this.registration !== token) return
+      this.registration = undefined
       for (const relay of this.relays.values()) relay.attach(undefined)
     }
   }
@@ -75,7 +78,7 @@ export class ComposerSuggestionRegistry implements ComposerSuggestions {
       this.relays.set(sessionId, relay)
     }
     // Re-resolve on every inject: a replaced Session object gets a fresh source.
-    relay.attach(this.provider?.forSession(sessionId))
+    relay.attach(this.registration?.provider.forSession(sessionId))
     return relay
   }
 }
