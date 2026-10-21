@@ -46,6 +46,11 @@ describe('resolveTeamRoutes', () => {
     ['an empty role description', [], { r: { ...REVIEWER, description: '' } }, 'roles.r.description must be non-empty'],
     ['an empty role provider', [], { r: { ...REVIEWER, provider: '' } }, 'roles.r.provider must be non-empty'],
     ['an empty role model', [], { r: { ...REVIEWER, model: ' ' } }, 'roles.r.model must be non-empty'],
+    ['a padded model provider', [{ provider: ' p', model: 'm' }], {}, 'models[0].provider must not have surrounding whitespace'],
+    ['a padded model id', [{ provider: 'p', model: 'm ' }], {}, 'models[0].model must not have surrounding whitespace'],
+    ['a padded role provider', [], { r: { ...REVIEWER, provider: 'p\n' } }, 'roles.r.provider must not have surrounding whitespace'],
+    ['a padded role model', [], { r: { ...REVIEWER, model: ' m' } }, 'roles.r.model must not have surrounding whitespace'],
+    ['a padded role effort', [], { r: { ...REVIEWER, reasoningEffort: 'high ' } }, 'roles.r.reasoningEffort must not have surrounding whitespace'],
     ['an empty role effort', [], { r: { ...REVIEWER, reasoningEffort: '' } }, 'roles.r.reasoningEffort must be non-empty'],
   ] as const)('rejects %s', (_case, models, roles, message) => {
     expect(() => resolveTeamRoutes(models, roles)).toThrow(message)

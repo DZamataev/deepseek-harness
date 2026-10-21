@@ -207,6 +207,7 @@ These limits describe what a team cannot do yet or what needs special operationa
 - **Flat immutable roster** — only the Lead creates direct teammates; there is no nested Team, rename, deletion, or name reuse.
 - **No automatic ownership release** — inactivity, interruption, process exit, and failed work do not release a task owner.
 - **No send retry guarantee** — Team does not retain or deduplicate new attempts; concurrent processes over one Team are unsupported. Historical queued messages that never reached their target are not delivered.
+- **Route shown for an unloaded unrouted teammate** — a teammate created without a route that is not loaded is listed with the Lead's current route, while its cold resume keeps the route it was created with.
 
 <a id="dev-note"></a>
 ### Dev Note

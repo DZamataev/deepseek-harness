@@ -65,7 +65,7 @@ Creation and listing results identify members by `target`, with no member Sessio
 
 ### Run teammates on other models
 
-Two optional settings let the Lead start a teammate on another LLM route. `models` lists exact `provider`/`model` routes the Lead may pick; `roles` names presets with a description, a route, an optional `reasoningEffort`, and optional `instructions`. A role's route is allowed without repeating it under `models`. These provider ids name LLM providers registered in the profile, not the subagent providers `freshProvider` and `forkProvider`.
+Two optional settings let the Lead start a teammate on another LLM route. `models` lists exact `provider`/`model` routes the Lead may pick; `roles` names presets with a description, a route, an optional `reasoningEffort`, and optional `instructions`. A role's route is allowed without repeating it under `models`. These provider ids name LLM providers registered in the profile, not the subagent providers `freshProvider` and `forkProvider`. A `fork` teammate on another route replays the Lead's completed turns through that model, so the Lead history must fit the teammate model's context window.
 
 ```yaml
 - id: tool-agent-team

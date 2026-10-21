@@ -74,11 +74,11 @@ export interface TeammateSelection {
   readonly instructions?: { readonly role: string; readonly text: string }
 }
 
-/** Reject one blank configuration value. */
+/** Reject one blank or whitespace-padded configuration value; padded ids never match a registered route. */
 function requireText(value: string | undefined, field: string): void {
-  if (value !== undefined && value.trim().length === 0) {
-    throw new Error(`tool-agent-team ${field} must be non-empty`)
-  }
+  if (value === undefined) return
+  if (value.trim().length === 0) throw new Error(`tool-agent-team ${field} must be non-empty`)
+  if (value !== value.trim()) throw new Error(`tool-agent-team ${field} must not have surrounding whitespace`)
 }
 
 /**

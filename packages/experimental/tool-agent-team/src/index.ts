@@ -61,7 +61,7 @@ interface ResolvedConfig {
 /** Model-facing collaboration guidance shared by Lead and teammates. */
 function teamPolicy(interrupt: boolean, routed: boolean): string {
   return `${teamPolicyBase(interrupt)}${routed
-    ? '\n\nTeammates may run on different LLM routes; list_agents shows each member\'s llmProvider and model. When a member on another model reviews work, verify its claims with your own tool calls and treat disagreement as a signal to investigate.'
+    ? '\n\nTeammates may run on different LLM routes; when a member on another model reviews work, verify its claims with your own tool calls and treat disagreement as a signal to investigate.'
     : ''}`
 }
 
@@ -274,7 +274,9 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
       async execute(args, exec) {
         const agent = callingAgent(exec.agent, 'spawn_teammate')
         const context = args.context ?? 'fresh'
-        const selection = routed ? selectTeammateRoute(config.routes, args) : undefined
+        const selection = routed && ctx.agentTeams.membership(agent).role === 'lead'
+          ? selectTeammateRoute(config.routes, args)
+          : undefined
         if (selection !== undefined) await preflightTeammateRoute(agent.ctx.get('llm'), selection.route, exec.signal)
         const prompt: ContentBlock[] = [{ type: 'text', text: args.prompt }]
         if (selection?.instructions !== undefined) {

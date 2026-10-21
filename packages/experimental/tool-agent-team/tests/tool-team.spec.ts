@@ -911,4 +911,27 @@ describe('dsh-tool-team teammate LLM routes', () => {
     expect(retried.isError, text(retried)).toBe(false)
     await waitNoAgent(ctx, spawnedChildId(ctx, lead, retried))
   })
+
+  it('lets a teammate with a route reach the Lead-only error without route work', async () => {
+    const { ctx, lead } = await routedSetup(['hang'])
+    const spawned = await execute(ctx, lead, 'spawn_teammate', {
+      name: 'reviewer', description: 'review', prompt: 'Wait', role: 'routed-reviewer',
+    })
+    expect(spawned.isError, text(spawned)).toBe(false)
+    const childId = spawnedChildId(ctx, lead, spawned)
+    const child = await waitRunning(ctx, childId)
+    const resolveCallConfig = vi.spyOn(ctx.llm, 'resolveCallConfig')
+    const denied = await execute(ctx, child, 'spawn_teammate', {
+      name: 'nested', description: 'not allowed', prompt: 'no', provider: 'routed', model: 'routed-small',
+    })
+    expect(denied.isError).toBe(true)
+    expect(text(denied)).toContain('only the Team Lead')
+    const invalid = await execute(ctx, child, 'spawn_teammate', {
+      name: 'nested', description: 'not allowed', prompt: 'no', provider: 'routed', model: 'unlisted',
+    })
+    expect(text(invalid)).toContain('only the Team Lead')
+    expect(resolveCallConfig).not.toHaveBeenCalled()
+    await execute(ctx, lead, 'interrupt_agent', { target: 'reviewer' })
+    await waitNoAgent(ctx, childId)
+  })
 })

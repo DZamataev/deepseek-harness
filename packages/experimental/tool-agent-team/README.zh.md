@@ -65,7 +65,7 @@ kind: "package-reference"
 
 ### 让 teammate 使用其他模型
 
-两个可选设置让 Lead 在另一条 LLM 路由上启动 teammate。`models` 列出 Lead 可以选择的精确 `provider`/`model` 路由；`roles` 定义具名预设，包含描述、路由、可选的 `reasoningEffort` 和可选的 `instructions`。角色的路由无需在 `models` 中重复即被允许。这里的 provider id 指 profile 中注册的 LLM 提供方，而不是 subagent 提供方 `freshProvider` 与 `forkProvider`。
+两个可选设置让 Lead 在另一条 LLM 路由上启动 teammate。`models` 列出 Lead 可以选择的精确 `provider`/`model` 路由；`roles` 定义具名预设，包含描述、路由、可选的 `reasoningEffort` 和可选的 `instructions`。角色的路由无需在 `models` 中重复即被允许。这里的 provider id 指 profile 中注册的 LLM 提供方，而不是 subagent 提供方 `freshProvider` 与 `forkProvider`。在另一条路由上的 `fork` teammate 会通过该模型重放 Lead 已完成的轮次，因此 Lead 历史必须能放入该 teammate 模型的上下文窗口。
 
 ```yaml
 - id: tool-agent-team
