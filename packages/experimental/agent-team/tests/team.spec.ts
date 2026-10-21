@@ -6,7 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { SessionLogOffset, SessionId, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SubagentService from '@deepseek-ai/dsh-subagent'
@@ -235,6 +235,100 @@ describe('Team identity and provisioning', () => {
     await expect(spawn(ctx, lead, 'fresh-worker')).rejects.toMatchObject({ code: 'TEAM_MEMBER_NAME_TAKEN' })
   })
 
+  it('forwards a teammate route to the child Agent and records it on the member', async () => {
+    // The Lead adapter answers the parent-delivered completion notice.
+    const { ctx, lead } = await setup([textResponse('lead notice answer')])
+    const effort = ReasoningEffortId('high')
+    const routed = new MockAdapter([textResponse('routed answer')], { efforts: [{ id: effort, name: 'High' }] })
+    ctx.llm.registerAdapter(['routed'], routed)
+    const startActivation = vi.spyOn(ctx.subagents, 'startActivation')
+
+    const started = await ctx.agentTeams.spawnTeammate(lead, {
+      name: 'routed-worker',
+      description: 'routed responsibility',
+      prompt: content('routed initial'),
+      context: 'fresh',
+      provider: 'spawn',
+      agentOptions: { provider: ' routed ', model: 'routed-model', reasoningEffort: effort },
+      signal: SIGNAL,
+    })
+    expect(startActivation.mock.calls[0]?.[0].request.agentOptions)
+      .toEqual({ provider: 'routed', model: 'routed-model', reasoningEffort: effort })
+    expect(started.member).toMatchObject({ llmProvider: 'routed', model: 'routed-model', reasoningEffort: effort })
+    await waitNoAgent(ctx, started.member.id)
+
+    expect(routed.requests).toHaveLength(1)
+    expect(routed.requests[0]).toMatchObject({ provider: 'routed', model: 'routed-model', reasoningEffort: effort })
+    expect(JSON.stringify(routed.requests[0]?.messages)).toContain('routed initial')
+    expect(lead.session.snapshotEvents().flatMap(event => event.type === 'team/member' ? [event.data.version] : []))
+      .toEqual([3, 3])
+    expect(durable(lead).members).toEqual([expect.objectContaining({
+      phase: 'active',
+      llmProvider: 'routed',
+      llmModel: 'routed-model',
+      llmReasoningEffort: effort,
+    })])
+    const [leadRow, routedRow] = ctx.agentTeams.listMembers(lead)
+    expect(leadRow).toMatchObject({ llmProvider: 'mock', model: 'mock' })
+    expect(leadRow).not.toHaveProperty('reasoningEffort')
+    expect(routedRow).toMatchObject({
+      status: 'inactive',
+      provider: 'spawn',
+      llmProvider: 'routed',
+      model: 'routed-model',
+      reasoningEffort: effort,
+    })
+  })
+
+  it('reports the Lead reasoning effort and keeps an unrouted spawn on the version 2 record', async () => {
+    const effort = ReasoningEffortId('low')
+    const { ctx } = await setup([])
+    const reasoning = new MockAdapter([textResponse('inherited answer'), textResponse('lead notice answer')], {
+      efforts: [{ id: effort, name: 'Low' }],
+    })
+    ctx.llm.registerAdapter(['reasoning'], reasoning)
+    const lead = await ctx.agentLoop.create(SessionId('reasoning-lead'), {
+      provider: 'reasoning',
+      model: 'lead-model',
+      reasoningEffort: effort,
+    })
+    const startActivation = vi.spyOn(ctx.subagents, 'startActivation')
+
+    const started = await spawn(ctx, lead, 'inherited-worker')
+    expect(Object.keys(startActivation.mock.calls[0]?.[0].request ?? {})).toEqual(['prompt', 'parent'])
+    await waitNoAgent(ctx, started.member.id)
+
+    expect(reasoning.requests[0]).toMatchObject({ provider: 'reasoning', model: 'lead-model' })
+    expect(JSON.stringify(reasoning.requests[0]?.messages)).toContain('inherited-worker initial')
+    expect(lead.session.snapshotEvents().flatMap(event => event.type === 'team/member' ? [event.data.version] : []))
+      .toEqual([2, 2])
+    expect(durable(lead).members[0]).not.toHaveProperty('llmProvider')
+    const [leadRow, inheritedRow] = ctx.agentTeams.listMembers(lead)
+    expect(leadRow).toMatchObject({ llmProvider: 'reasoning', model: 'lead-model', reasoningEffort: effort })
+    expect(inheritedRow).toMatchObject({ status: 'inactive', llmProvider: 'reasoning', model: 'lead-model' })
+    expect(inheritedRow).not.toHaveProperty('reasoningEffort')
+  })
+
+  it('rejects an incomplete teammate route before provisioning', async () => {
+    const { ctx, lead } = await setup([])
+    for (const agentOptions of [
+      { provider: ' ', model: 'routed-model' },
+      { provider: 'routed', model: '' },
+      { provider: 'routed', model: 'routed-model', reasoningEffort: ReasoningEffortId(' ') },
+    ]) {
+      await expect(ctx.agentTeams.spawnTeammate(lead, {
+        name: 'incomplete-route',
+        description: 'never provisioned',
+        prompt: content('unused'),
+        context: 'fresh',
+        provider: 'spawn',
+        agentOptions,
+        signal: SIGNAL,
+      })).rejects.toMatchObject({ code: 'TEAM_INVALID_ARGUMENT' })
+    }
+    expect(durable(lead).members).toEqual([])
+  })
+
   it('flushes the accepted child prompt before committing the active roster edge', async () => {
     const { ctx, lead } = await setup([textResponse('checkpointed child answer')])
     const flush = ctx.sessions.flush.bind(ctx.sessions)
@@ -404,8 +498,9 @@ describe('Team identity and provisioning', () => {
       messageId: createUserMessage({ content: content('accepted'), source: { kind: 'user' } }).id,
     }))
     const inactive = await spawn(first.ctx, first.lead, 'instant-worker')
-    expect(inactive.member).toMatchObject({ status: 'inactive', diagnostics: [] })
-    expect(inactive.member).not.toHaveProperty('model')
+    // The settled child is not loaded, so the unrouted row reports the Lead route.
+    expect(inactive.member).toMatchObject({ status: 'inactive', model: 'mock', llmProvider: 'mock', diagnostics: [] })
+    expect(inactive.member).not.toHaveProperty('reasoningEffort')
 
     const second = await setup([])
     vi.spyOn(teamInternals(second.ctx).roster, 'checkpointInitialPrompt').mockResolvedValueOnce()

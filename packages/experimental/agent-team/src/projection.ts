@@ -2,7 +2,7 @@
 
 import { z } from 'zod'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { ReasoningEffortId, type ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent, SessionEventMap, SessionId } from '@deepseek-ai/dsh-session'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import type {
@@ -64,7 +64,7 @@ const contentBlockSchema: z.ZodType<ContentBlock> = z.lazy(() => z.union([
   }),
 ])) as z.ZodType<ContentBlock>
 
-const teamMemberSnapshotSchema = z.object({
+const teamMemberIdentityFields = {
   id: sessionIdSchema,
   name: z.string(),
   description: z.string(),
@@ -72,7 +72,20 @@ const teamMemberSnapshotSchema = z.object({
   context: z.enum(['fresh', 'fork']),
   phase: z.enum(['provisioning', 'active', 'failed']),
   error: z.string().optional(),
+}
+
+// Version 2 member records never carry a teammate route.
+const unroutedMemberSnapshotSchema = z.object(teamMemberIdentityFields).strict() as z.ZodType<TeamMemberSnapshot>
+
+// Version 3 member records carry a complete teammate route.
+const routedMemberSnapshotSchema = z.object({
+  ...teamMemberIdentityFields,
+  llmProvider: z.string().min(1),
+  llmModel: z.string().min(1),
+  llmReasoningEffort: z.string().min(1).transform(value => ReasoningEffortId(value)).optional(),
 }).strict() as z.ZodType<TeamMemberSnapshot>
+
+const teamMemberSnapshotSchema = z.union([unroutedMemberSnapshotSchema, routedMemberSnapshotSchema])
 
 const teamTaskSnapshotSchema = z.object({
   id: teamTaskIdSchema,
@@ -98,11 +111,10 @@ const teamEventSelectorSchema = z.object({
   teamId: teamIdSchema,
 }).loose()
 
-const teamMemberEventSchema = z.object({
-  version: z.literal(2),
-  teamId: teamIdSchema,
-  member: teamMemberSnapshotSchema,
-}).strict() as z.ZodType<SessionEventMap['team/member']>
+const teamMemberEventSchema = z.union([
+  z.object({ version: z.literal(2), teamId: teamIdSchema, member: unroutedMemberSnapshotSchema }).strict(),
+  z.object({ version: z.literal(3), teamId: teamIdSchema, member: routedMemberSnapshotSchema }).strict(),
+]) as z.ZodType<SessionEventMap['team/member']>
 
 const teamTaskEventSchema = z.object({
   version: z.literal(2),
@@ -228,7 +240,7 @@ function applyProjectionEvent(state: TeamProjectionState, event: SessionEvent): 
   try {
     const selector = parsePersisted(event.type, teamEventSelectorSchema, event.data)
     if (selector.teamId !== state.id) return state
-    if (selector.version !== 2) {
+    if (selector.version !== 2 && !(selector.version === 3 && event.type === 'team/member')) {
       throw new Error(`unsupported Agent Teams event version ${String(selector.version)}`)
     }
     return applyCurrentTeamEvent(state, parseCurrentTeamEvent(event))
@@ -258,7 +270,9 @@ function applyCurrentTeamEvent(state: TeamProjectionState, event: TeamSessionEve
       if (prior === undefined) {
         if (member.phase !== 'provisioning') throw new Error(`teammate "${member.name}" must begin provisioning`)
       } else {
-        if (prior.name !== member.name || prior.provider !== member.provider || prior.context !== member.context) {
+        if (prior.name !== member.name || prior.provider !== member.provider || prior.context !== member.context
+          || prior.llmProvider !== member.llmProvider || prior.llmModel !== member.llmModel
+          || prior.llmReasoningEffort !== member.llmReasoningEffort) {
           throw new Error(`teammate "${member.id}" changed immutable identity fields`)
         }
         if (prior.phase !== 'provisioning' || member.phase === 'provisioning') {
@@ -315,6 +329,9 @@ const teamMemberProjectionSchema = z.object({
   role: z.enum(['lead', 'teammate']),
   phase: z.enum(['provisioning', 'active', 'failed']),
   error: z.string().optional(),
+  llmProvider: z.string().optional(),
+  llmModel: z.string().optional(),
+  llmReasoningEffort: z.string().transform(value => ReasoningEffortId(value)).optional(),
 }).strict() as z.ZodType<TeamMemberProjection>
 
 const teamTaskViewSchema = z.object({
@@ -349,6 +366,9 @@ function buildTeamProjection(state: TeamProjectionState): TeamProjection {
       role: 'teammate',
       phase: member.phase,
       ...member.error === undefined ? {} : { error: member.error },
+      ...member.llmProvider === undefined ? {} : { llmProvider: member.llmProvider },
+      ...member.llmModel === undefined ? {} : { llmModel: member.llmModel },
+      ...member.llmReasoningEffort === undefined ? {} : { llmReasoningEffort: member.llmReasoningEffort },
     })
   }
   return {
@@ -386,7 +406,7 @@ export function teamProjectionView(state: TeamProjectionState): TeamProjection {
 /** Team projection selected by the projected Session identity; the wire view carries durable roster and task state only. */
 export const teamProjectionDefinition = {
   key: 'agentTeam',
-  stateVersion: 4,
+  stateVersion: 5,
   stateSchema: teamProjectionEntrySchema,
   init: header => emptyTeamState(header.id),
   apply: applyProjectionEvent,

@@ -5,8 +5,22 @@ import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team'
 import type { TeamMemberView } from '@deepseek-ai/dsh-experimental-agent-team'
+import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { InferValue, ValueSchemaSpec } from '@deepseek-ai/dsh-tools'
+import type { InferValue, StringValueSchemaSpec, ValueSchemaSpec } from '@deepseek-ai/dsh-tools'
+import {
+  TeammateModelRouteSchema,
+  TeammateRolesSchema,
+  preflightTeammateRoute,
+  providerParameterDescription,
+  resolveTeamRoutes,
+  roleParameterDescription,
+  routeSelectionEnabled,
+  selectTeammateRoute,
+} from './routes.ts'
+import type { TeamRoutes, TeammateModelRoute, TeammateRoleConfig } from './routes.ts'
+
+export type { TeammateModelRoute, TeammateRoleConfig } from './routes.ts'
 
 /** Cordis plugin name. */
 export const name = 'tool-agent-team'
@@ -21,6 +35,10 @@ export interface Config {
   readonly freshProvider?: string
   /** Continuable-subagent provider used for completed-prefix fork teammates. */
   readonly forkProvider?: string
+  /** Exact LLM routes the Lead may select for a teammate with `provider` and `model`. Routes must be unique. */
+  readonly models?: TeammateModelRoute[]
+  /** Named teammate presets the Lead may select with `role`; each role's route is implicitly allowed. */
+  readonly roles?: Readonly<Record<string, TeammateRoleConfig>>
 }
 
 /** Loader schema for the opt-in Team tool plugin. */
@@ -28,10 +46,27 @@ export const Config: z<Config> = z.object({
   interrupt: z.boolean().default(true),
   freshProvider: z.string().default('spawn'),
   forkProvider: z.string().default('fork'),
+  models: z.array(TeammateModelRouteSchema).default([]),
+  roles: TeammateRolesSchema.default({}),
 })
 
+/** Plugin configuration after defaults and route validation. */
+interface ResolvedConfig {
+  readonly interrupt: boolean
+  readonly freshProvider: string
+  readonly forkProvider: string
+  readonly routes: TeamRoutes
+}
+
 /** Model-facing collaboration guidance shared by Lead and teammates. */
-function teamPolicy(interrupt: boolean): string {
+function teamPolicy(interrupt: boolean, routed: boolean): string {
+  return `${teamPolicyBase(interrupt)}${routed
+    ? '\n\nTeammates may run on different LLM routes; when a member on another model reviews work, verify its claims with your own tool calls and treat disagreement as a signal to investigate.'
+    : ''}`
+}
+
+/** Collaboration guidance independent of teammate LLM routes. */
+function teamPolicyBase(interrupt: boolean): string {
   return `Agent Teams is available in this session
 
 The Team Lead and all teammates share the same working directory and filesystem. Edits are immediately visible to every member. Split write work into disjoint scopes, record expected write scopes on shared tasks, and use task dependencies when work must be ordered. Write-scope overlap is advisory, not a lock.
@@ -60,11 +95,13 @@ const MEMBER_VIEW_SCHEMA = {
     provider: { type: 'string' },
     context: { type: 'string', enum: ['fresh', 'fork'] },
     model: { type: 'string' },
+    llmProvider: { type: 'string' },
+    reasoningEffort: { type: 'string' },
     diagnostics: { type: 'array', required: true, items: { type: 'string' } },
   },
 } as const
 
-/** Expose the member name as its model-facing target. */
+/** Expose the member name as its model-facing target, without the member Session id. */
 function modelMember(member: TeamMemberView): InferValue<typeof MEMBER_VIEW_SCHEMA> {
   const { id: _id, name, ...details } = member
   return { target: name, ...details }
@@ -157,6 +194,35 @@ function jsonOutput<const S extends ValueSchemaSpec>(schema: S): {
   }
 }
 
+/** Optional `spawn_teammate` route parameters; each key is present only when configured. */
+interface RouteParameters {
+  readonly role?: StringValueSchemaSpec
+  readonly provider?: StringValueSchemaSpec
+  readonly model?: StringValueSchemaSpec
+  readonly reasoning_effort?: StringValueSchemaSpec
+}
+
+/**
+ * Build the route parameters of `spawn_teammate`. Without configured models
+ * or roles the tool schema has no route parameters.
+ * @param routes - Validated route configuration.
+ * @returns `role` when roles exist, and `provider`, `model`, and `reasoning_effort` when any route is allowed.
+ */
+function routeParameters(routes: TeamRoutes): RouteParameters {
+  if (!routeSelectionEnabled(routes)) return {}
+  return {
+    ...routes.roles.size === 0 ? {} : {
+      role: { type: 'string', enum: [...routes.roles.keys()], description: roleParameterDescription(routes) },
+    },
+    provider: { type: 'string', description: providerParameterDescription(routes) },
+    model: { type: 'string', description: 'Exact model id for the teammate; supply together with provider.' },
+    reasoning_effort: {
+      type: 'string',
+      description: 'Reasoning effort for the selected role or provider/model, replacing a role effort; requires role or provider/model. Omit to use the role effort or the model default.',
+    },
+  }
+}
+
 /** Recover the exact caller guaranteed by Agent-scoped tool discovery. */
 function callingAgent(agent: Agent | undefined, toolName: string): Agent {
   /* v8 ignore next 2 -- Team tools are registered only in an exact Agent scope, so discovery supplies this carrier. */
@@ -165,15 +231,16 @@ function callingAgent(agent: Agent | undefined, toolName: string): Agent {
 }
 
 /** Register the complete Team tool set in one exact Agent scope. */
-function install(agent: Agent, ctx: Context, config: Required<Config>): () => void {
+function install(agent: Agent, ctx: Context, config: ResolvedConfig): () => void {
   const scoped = agent.ctx
   const disposers: Array<() => unknown> = []
   const register = (disposer: () => unknown): void => { disposers.push(disposer) }
+  const routed = routeSelectionEnabled(config.routes)
   try {
     register(scoped.systemPrompt.section({
       name: 'team:policy',
       order: scoped.systemPrompt.getSectionOrder('TEAM_POLICY'),
-      text: teamPolicy(config.interrupt),
+      text: teamPolicy(config.interrupt, routed),
     }))
     register(scoped.systemPrompt.context({
       name: 'team:identity',
@@ -201,17 +268,27 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
           enum: ['fresh', 'fork'],
           description: 'fresh starts without Lead history; fork inherits completed Lead turns. Defaults to fresh.',
         },
+        ...routeParameters(config.routes),
       },
       output: jsonOutput(SPAWN_VALUE_SCHEMA),
       async execute(args, exec) {
         const agent = callingAgent(exec.agent, 'spawn_teammate')
         const context = args.context ?? 'fresh'
+        const selection = routed && ctx.agentTeams.membership(agent).role === 'lead'
+          ? selectTeammateRoute(config.routes, args)
+          : undefined
+        if (selection !== undefined) await preflightTeammateRoute(agent.ctx.get('llm'), selection.route, exec.signal)
+        const prompt: ContentBlock[] = [{ type: 'text', text: args.prompt }]
+        if (selection?.instructions !== undefined) {
+          prompt.unshift({ type: 'text', text: `Role "${selection.instructions.role}": ${selection.instructions.text}` })
+        }
         const result = await ctx.agentTeams.spawnTeammate(agent, {
           name: args.name,
           description: args.description,
-          prompt: [{ type: 'text', text: args.prompt }],
+          prompt,
           context,
           provider: context === 'fork' ? config.forkProvider : config.freshProvider,
+          ...selection === undefined ? {} : { agentOptions: selection.route },
           signal: exec.signal,
         })
         return { member: modelMember(result.member) }
@@ -409,10 +486,11 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
 
 /** Install Team tools in every live or subsequently published Team member scope. */
 export function apply(ctx: Context, config: Config = {}): void {
-  const resolved: Required<Config> = {
+  const resolved: ResolvedConfig = {
     interrupt: config.interrupt ?? true,
     freshProvider: config.freshProvider ?? 'spawn',
     forkProvider: config.forkProvider ?? 'fork',
+    routes: resolveTeamRoutes(config.models ?? [], config.roles ?? {}),
   }
   const installed = new Map<Agent, () => void>()
   const maybeInstall = (agent: Agent): void => {

@@ -843,7 +843,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-experimental-agent-team`
 
 - `inject`: `agents` · `sessions` · `sessionPersistence` · `sessionProjections` · `subagents`
-- `source`: [`packages/experimental/agent-team/src/types.ts:153`](../packages/experimental/agent-team/src/types.ts)
+- `source`: [`packages/experimental/agent-team/src/types.ts:170`](../packages/experimental/agent-team/src/types.ts)
 
 ```ts config-catalog
 /** Team-service deployment limits. */
@@ -1295,7 +1295,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-experimental-tool-agent-team`
 
 - `inject`: `agents` · `agentTeams` · `tools` · `systemPrompt`
-- `source`: [`packages/experimental/tool-agent-team/src/index.ts:17`](../packages/experimental/tool-agent-team/src/index.ts)
+- `source`: [`packages/experimental/tool-agent-team/src/index.ts:31`](../packages/experimental/tool-agent-team/src/index.ts)
 
 ```ts config-catalog
 /** Tool routing configuration. */
@@ -1306,6 +1306,32 @@ export interface Config {
   readonly freshProvider?: string
   /** Continuable-subagent provider used for completed-prefix fork teammates. */
   readonly forkProvider?: string
+  /** Exact LLM routes the Lead may select for a teammate with `provider` and `model`. Routes must be unique. */
+  readonly models?: TeammateModelRoute[]
+  /** Named teammate presets the Lead may select with `role`; each role's route is implicitly allowed. */
+  readonly roles?: Readonly<Record<string, TeammateRoleConfig>>
+}
+
+/** One exact LLM route the Lead may select for a teammate. */
+export interface TeammateModelRoute {
+  /** Registered LLM provider id. */
+  readonly provider: string
+  /** Provider-owned exact model id. */
+  readonly model: string
+}
+
+/** One named teammate preset; its route is implicitly allowed. */
+export interface TeammateRoleConfig {
+  /** Model-facing summary of the role. */
+  readonly description: string
+  /** Registered LLM provider id. */
+  readonly provider: string
+  /** Provider-owned exact model id. */
+  readonly model: string
+  /** Adapter-owned reasoning effort; the selected model's default applies when omitted. */
+  readonly reasoningEffort?: string
+  /** Text sent to the teammate before the Lead's initial task. */
+  readonly instructions?: string
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-tool-agent-team -->

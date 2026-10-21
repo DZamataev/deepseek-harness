@@ -6,7 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { ReasoningEffortId, ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import { SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
@@ -777,5 +777,161 @@ describe('dsh-tool-team', () => {
     const childId = spawnedChildId(ctx, lead, result)
     await vi.waitFor(() => { expect(ctx.agents.get(childId)).toBeUndefined() }, { timeout: 5_000 })
     expect(ctx.agentTeams.listMembers(lead)[1]).toMatchObject({ provider: 'team-fresh' })
+  })
+})
+
+describe('dsh-tool-team teammate LLM routes', () => {
+  const HIGH = ReasoningEffortId('high')
+  const ROUTE_CONFIG = {
+    models: [{ provider: 'routed', model: 'routed-small' }],
+    roles: {
+      'routed-reviewer': {
+        description: 'Reviews diffs on another model',
+        provider: 'routed',
+        model: 'routed-large',
+        reasoningEffort: 'high',
+        instructions: 'Review critically and cite evidence.',
+      },
+    },
+  }
+
+  async function routedSetup(script: ConstructorParameters<typeof MockAdapter>[0], config: toolTeam.Config = ROUTE_CONFIG) {
+    const base = await setup([textResponse('lead notice answer'), textResponse('lead notice answer')])
+    await base.fiber.dispose()
+    await base.ctx.plugin(toolTeam, config)
+    const routed = new MockAdapter(script, { efforts: [{ id: HIGH, name: 'High' }] })
+    base.ctx.llm.registerAdapter(['routed'], routed)
+    return { ...base, routed }
+  }
+
+  function spawnSchema(ctx: Context, lead: Agent) {
+    return ctx.tools.get('spawn_teammate', scopeOf(lead.ctx))
+  }
+
+  it('keeps the unconfigured spawn schema, description, and policy', async () => {
+    const { ctx, lead } = await setup([])
+    const tool = spawnSchema(ctx, lead)
+    expect(Object.keys((tool?.parameters as { properties: object }).properties)).toEqual(['name', 'description', 'prompt', 'context'])
+    expect(tool?.description).toBe('Create one named, durable teammate. Only the Team Lead may call this tool.')
+    expect(renderPrompt(await assembly(ctx, lead))).not.toContain('different LLM routes')
+  })
+
+  it('exposes configured roles, allowed routes, and the cross-model review policy', async () => {
+    const { ctx, lead } = await routedSetup([])
+    const tool = spawnSchema(ctx, lead)
+    const properties = (tool?.parameters as { properties: Record<string, { enum?: string[]; description: string }> }).properties
+    expect(Object.keys(properties)).toEqual(['name', 'description', 'prompt', 'context', 'role', 'provider', 'model', 'reasoning_effort'])
+    expect(properties.role?.enum).toEqual(['routed-reviewer'])
+    expect(properties.role?.description).toContain('routed-reviewer: Reviews diffs on another model (routed/routed-large, high)')
+    expect(properties.provider?.description).toContain('Allowed routes: routed/routed-small, routed/routed-large.')
+    expect(tool?.description).toBe('Create one named, durable teammate. Only the Team Lead may call this tool.')
+    expect(renderPrompt(await assembly(ctx, lead))).toContain('Teammates may run on different LLM routes')
+  })
+
+  it('exposes only route parameters when models are configured without roles', async () => {
+    const { ctx, lead } = await routedSetup([], { models: ROUTE_CONFIG.models })
+    const properties = (spawnSchema(ctx, lead)?.parameters as { properties: object }).properties
+    expect(Object.keys(properties)).toEqual(['name', 'description', 'prompt', 'context', 'provider', 'model', 'reasoning_effort'])
+  })
+
+  it.each([
+    ['a duplicate route', { models: [{ provider: 'p', model: 'm' }, { provider: 'p', model: 'm' }] },
+      'tool-agent-team models repeats route "p/m"'],
+    ['an invalid role name', { roles: { 'Bad-Role': ROUTE_CONFIG.roles['routed-reviewer'] } },
+      '$.roles expect string to match regexp'],
+    ['an empty role description', { roles: { reviewer: { ...ROUTE_CONFIG.roles['routed-reviewer'], description: '' } } },
+      '$.roles.reviewer.description expected string length >= 1'],
+    ['an empty model provider', { models: [{ provider: '', model: 'm' }] },
+      '$.models[0].provider expected string length >= 1'],
+  ])('fails plugin load for %s', async (_case, config, message) => {
+    const { ctx, lead, fiber } = await setup([])
+    await fiber.dispose()
+    await expect(ctx.plugin(toolTeam, config)).rejects.toThrow(message)
+    expect(spawnSchema(ctx, lead)).toBeUndefined()
+  })
+
+  it('spawns a role teammate on its route with role instructions first', async () => {
+    const { ctx, lead, routed } = await routedSetup([textResponse('review done')])
+    const spawnTeammate = vi.spyOn(ctx.agentTeams, 'spawnTeammate')
+    const spawned = await execute(ctx, lead, 'spawn_teammate', {
+      name: 'reviewer', description: 'review the diff', prompt: 'Review the change', role: 'routed-reviewer',
+    })
+    expect(spawned.isError, text(spawned)).toBe(false)
+    expect(spawnTeammate.mock.calls[0]?.[1]).toMatchObject({
+      description: 'review the diff',
+      prompt: [
+        { type: 'text', text: 'Role "routed-reviewer": Review critically and cite evidence.' },
+        { type: 'text', text: 'Review the change' },
+      ],
+      agentOptions: { provider: 'routed', model: 'routed-large', reasoningEffort: HIGH },
+    })
+    expect(JSON.parse(text(spawned))).toMatchObject({
+      member: { target: 'reviewer', llmProvider: 'routed', model: 'routed-large', reasoningEffort: 'high' },
+    })
+    await waitNoAgent(ctx, spawnedChildId(ctx, lead, spawned))
+    expect(routed.requests[0]).toMatchObject({ provider: 'routed', model: 'routed-large', reasoningEffort: HIGH })
+    const listed = JSON.parse(text(await execute(ctx, lead, 'list_agents', {}))) as unknown[]
+    expect(listed).toEqual([
+      expect.objectContaining({ target: 'lead', llmProvider: 'mock', model: 'mock' }),
+      expect.objectContaining({ target: 'reviewer', llmProvider: 'routed', model: 'routed-large', reasoningEffort: 'high' }),
+    ])
+  })
+
+  it('forwards an explicit allowed route unchanged and leaves the prompt as one block', async () => {
+    const { ctx, lead } = await routedSetup([textResponse('done')])
+    const spawnTeammate = vi.spyOn(ctx.agentTeams, 'spawnTeammate')
+    const spawned = await execute(ctx, lead, 'spawn_teammate', {
+      name: 'small-worker', description: 'small work', prompt: 'Do it', provider: 'routed', model: 'routed-small',
+    })
+    expect(spawned.isError, text(spawned)).toBe(false)
+    expect(spawnTeammate.mock.calls[0]?.[1]).toMatchObject({
+      prompt: [{ type: 'text', text: 'Do it' }],
+      agentOptions: { provider: 'routed', model: 'routed-small' },
+    })
+    await waitNoAgent(ctx, spawnedChildId(ctx, lead, spawned))
+  })
+
+  it.each([
+    ['an unsupported effort', { provider: 'routed', model: 'routed-small', reasoning_effort: 'ultra' }],
+    ['a disallowed route', { provider: 'routed', model: 'other' }],
+    ['an unregistered allowed provider', { provider: 'missing', model: 'm' }],
+  ])('rejects %s before consuming the teammate name', async (_case, route) => {
+    const { ctx, lead } = await routedSetup([textResponse('done')], {
+      models: [{ provider: 'missing', model: 'm' }, ...ROUTE_CONFIG.models],
+    })
+    const spawnTeammate = vi.spyOn(ctx.agentTeams, 'spawnTeammate')
+    const rejected = await execute(ctx, lead, 'spawn_teammate', {
+      name: 'worker', description: 'work', prompt: 'Do it', ...route,
+    })
+    expect(rejected.isError).toBe(true)
+    expect(spawnTeammate).not.toHaveBeenCalled()
+    const retried = await execute(ctx, lead, 'spawn_teammate', {
+      name: 'worker', description: 'work', prompt: 'Do it', provider: 'routed', model: 'routed-small',
+    })
+    expect(retried.isError, text(retried)).toBe(false)
+    await waitNoAgent(ctx, spawnedChildId(ctx, lead, retried))
+  })
+
+  it('lets a teammate with a route reach the Lead-only error without route work', async () => {
+    const { ctx, lead } = await routedSetup(['hang'])
+    const spawned = await execute(ctx, lead, 'spawn_teammate', {
+      name: 'reviewer', description: 'review', prompt: 'Wait', role: 'routed-reviewer',
+    })
+    expect(spawned.isError, text(spawned)).toBe(false)
+    const childId = spawnedChildId(ctx, lead, spawned)
+    const child = await waitRunning(ctx, childId)
+    const resolveCallConfig = vi.spyOn(ctx.llm, 'resolveCallConfig')
+    const denied = await execute(ctx, child, 'spawn_teammate', {
+      name: 'nested', description: 'not allowed', prompt: 'no', provider: 'routed', model: 'routed-small',
+    })
+    expect(denied.isError).toBe(true)
+    expect(text(denied)).toContain('only the Team Lead')
+    const invalid = await execute(ctx, child, 'spawn_teammate', {
+      name: 'nested', description: 'not allowed', prompt: 'no', provider: 'routed', model: 'unlisted',
+    })
+    expect(text(invalid)).toContain('only the Team Lead')
+    expect(resolveCallConfig).not.toHaveBeenCalled()
+    await execute(ctx, lead, 'interrupt_agent', { target: 'reviewer' })
+    await waitNoAgent(ctx, childId)
   })
 })

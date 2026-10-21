@@ -1,4 +1,4 @@
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { ReasoningEffortId, type ContentBlock } from '@deepseek-ai/dsh-llm'
 import { describe, expect, it, onTestFinished } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
@@ -380,6 +380,83 @@ describe('Agent Teams projection events', () => {
     } finally {
       await registry.dispose()
     }
+  })
+
+  it('replays legacy version-2 member records without a teammate route', () => {
+    const state = projectTeam(ROOT, [
+      event('team/member', { version: 2, teamId: TEAM, member: member() }, SessionSeq(0)),
+      event('team/member', { version: 2, teamId: TEAM, member: member({ phase: 'active' }) }, SessionSeq(1)),
+    ])
+    expect(state.members).toEqual([member({ phase: 'active' })])
+    expect(teamProjectionView(state).members.at(-1)).toEqual({
+      id: CHILD, name: 'worker-a', role: 'teammate', phase: 'active',
+    })
+  })
+
+  it('replays version-3 teammate routes through state, checkpoints, and the client view', async () => {
+    const effort = ReasoningEffortId('high')
+    const routed = { llmProvider: 'codex-lb', llmModel: 'gpt-6.1-sol', llmReasoningEffort: effort }
+    const projected = project(ROOT, [
+      event('team/member', { version: 3, teamId: TEAM, member: member(routed) }, SessionSeq(0)),
+      event('team/member', { version: 3, teamId: TEAM, member: member({ ...routed, phase: 'active' }) }, SessionSeq(1)),
+    ])
+    const state = teamState(projected)
+    expect(state.members).toEqual([member({ ...routed, phase: 'active' })])
+    expect(teamProjectionView(state).members.at(-1)).toEqual({
+      id: CHILD, name: 'worker-a', role: 'teammate', phase: 'active', ...routed,
+    })
+    expect(teamProjectionDefinition.wire.viewSchema.parse(teamProjectionView(state))).toEqual(teamProjectionView(state))
+    expect(teamProjectionDefinition.stateSchema.parse(JSON.parse(JSON.stringify(projected)))).toEqual(projected)
+    const withoutEffort = projectTeam(ROOT, [event('team/member', {
+      version: 3, teamId: TEAM, member: member({ llmProvider: 'codex-lb', llmModel: 'gpt-6.1-sol' }),
+    }, SessionSeq(0))])
+    expect(withoutEffort.members[0]).not.toHaveProperty('llmReasoningEffort')
+
+    const ctx = new Context()
+    const registry = ctx.plugin(SessionProjectionRegistry)
+    try {
+      await registry
+      ctx.sessionProjections.register(teamProjectionDefinition)
+      const restored = ctx.sessionProjections.restore(
+        { agentTeam: { ver: 4, seq: SessionSeq(0), val: project(ROOT, []) } },
+        [event('team/member', { version: 3, teamId: TEAM, member: member(routed) }, SessionSeq(0))],
+        SessionLogOffset(0),
+        { version: SESSION_FORMAT_VERSION, id: ROOT, createdAt: 0, isSeeded: false },
+        SessionLogOffset(0),
+      )
+      expect(restored.checkpoint['agentTeam']?.ver).toBe(5)
+      expect(teamProjectionDefinition.stateSchema.parse(restored.checkpoint['agentTeam']!.val).members)
+        .toEqual([member(routed)])
+    } finally {
+      await registry.dispose()
+    }
+  })
+
+  it('rejects member records whose version and route disagree or whose route changes', () => {
+    const routed = { llmProvider: 'codex-lb', llmModel: 'gpt-6.1-sol' }
+    const mismatched = [
+      { version: 2 as const, member: member(routed) },
+      { version: 3 as const, member: member() },
+      { version: 3 as const, member: member({ llmProvider: 'codex-lb' }) },
+      { version: 3 as const, member: member({ ...routed, llmReasoningEffort: ReasoningEffortId('') }) },
+    ].map(data => event('team/member', { ...data, teamId: TEAM }, SessionSeq(0)))
+    for (const candidate of mismatched) {
+      expect(() => projectTeam(ROOT, [candidate])).toThrow(/team\/member payload is invalid/)
+    }
+
+    const provisioning = event('team/member', { version: 3, teamId: TEAM, member: member(routed) }, SessionSeq(0))
+    for (const changed of [
+      { version: 2 as const, member: member({ phase: 'active' }) },
+      { version: 3 as const, member: member({ ...routed, llmModel: 'gpt-6-sol', phase: 'active' }) },
+      { version: 3 as const, member: member({ ...routed, llmReasoningEffort: ReasoningEffortId('max'), phase: 'active' }) },
+    ]) {
+      expect(() => projectTeam(ROOT, [provisioning, event('team/member', {
+        ...changed, teamId: TEAM,
+      }, SessionSeq(1))])).toThrow(/immutable identity/)
+    }
+    expect(project(ROOT, [event('team/task', {
+      version: 3 as 2, teamId: TEAM, task: task(),
+    }, SessionSeq(0))]).failure).toMatch(/unsupported Agent Teams event version 3/)
   })
 
   it('records unsupported event versions without applying them', () => {
