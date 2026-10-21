@@ -1,0 +1,12 @@
+version: 1
+scenario: composer-prediction
+profile: sdk
+composition: composer-prediction
+recording: authored
+header:
+  class: composer-prediction
+  pin: true
+  systemPromptSource: session/text-turn
+  toolSchemasSource: session/text-turn
+replay:
+  override: true

@@ -54,6 +54,9 @@ kind: "package-group"
 | [`translator`](translator/README.zh.md) | 免登录 Google 与 Bing 文本翻译 | `ctx.translator` |
 | [`client-ui-cot-translation`](client-ui-cot-translation/README.zh.md) | 展开的思考内容翻译与原文控件 | `ctx.cotTranslation` |
 | [`cot-translation-bundle`](cot-translation-bundle/README.zh.md) | 默认禁用的思考内容翻译组合 | — |
+| [`composer-prediction`](composer-prediction/README.zh.md) | 作为 Session projection 发布的下一条用户消息预测 | — |
+| [`client-ui-composer-prediction`](client-ui-composer-prediction/README.zh.md) | 在输入框中以占位文本显示预测的下一条消息 | — |
+| [`composer-prediction-bundle`](composer-prediction-bundle/README.zh.md) | 默认禁用的可选输入预测组合 | — |
 | [`speech-to-text`](speech-to-text/README.zh.md) | 具名语音识别 Provider | `ctx.speechToText` |
 | [`speech-to-text-sensevoice`](speech-to-text-sensevoice/README.zh.md) | 托管本地 SenseVoice 推理 | — |
 | [`api-speech-to-text`](api-speech-to-text/README.zh.md) | 带认证的临时转写 Remote | `ctx.speechController` |

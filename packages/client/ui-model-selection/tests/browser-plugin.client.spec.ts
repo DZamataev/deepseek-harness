@@ -111,6 +111,10 @@ async function bench(locale: 'zh' | 'en' = 'zh') {
     blocks: {
       set: (id: SessionId, block: { reason: string } | undefined) => { blocks.set(id, block) },
     },
+    suggestions: {
+      register: () => () => {},
+      storeFor: () => ({ getSnapshot: () => undefined, subscribe: () => () => {} }),
+    },
   })
   let contribution: CommandContribution | undefined
   ctx.provide('commandUi', {

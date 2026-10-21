@@ -27,6 +27,7 @@ import type {
 import type { QueueAction } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { ComposerBlocks } from './contract/composer-blocks.ts'
+import type { ComposerSuggestions } from './contract/composer-suggestions.ts'
 import type {
   DraftAttachmentId, DraftAttachmentSerializationResult, SessionInputResolver, SubmitAttachment, SubmitOutcome,
 } from './contract/input.ts'
@@ -45,6 +46,11 @@ export interface IConversation {
    * cannot import makes a session's input inert with its own reason.
    */
   readonly blocks: ComposerBlocks
+  /**
+   * The composer-suggestion registry: how a plugin the composer cannot import
+   * offers placeholder text that plain Tab, Right arrow, or the key hint accepts.
+   */
+  readonly suggestions: ComposerSuggestions
   /**
    * Send a prompt into the caller scope's session (queued turn).
    * @param text - prompt text, sent verbatim as one text block.
@@ -155,6 +161,8 @@ export class ConversationController extends Service implements IConversation {
   readonly input: SessionInputResolver
   /** The per-session composer-block registry. */
   readonly blocks: ComposerBlocks
+  /** The composer-suggestion registry. */
+  readonly suggestions: ComposerSuggestions
   /** Live upload state per file-kind draft; images never appear here. */
   readonly fileUploads: SnapshotStore<Record<string, DraftFileUpload>> = createSnapshotStore<Record<string, DraftFileUpload>>({})
   private readonly draftAttachments = new Map<DraftAttachmentId, ComposerAttachment>()
@@ -173,18 +181,20 @@ export class ConversationController extends Service implements IConversation {
   /**
    * @param ctx - owning root context (the plugin apply context; the service
    * registers itself and follows that fiber's lifetime).
-   * @param config - carries the SessionInputResolver and composer-block registry
-   * constructed by the plugin apply (the same instances the slot inject
+   * @param config - carries the SessionInputResolver and composer-block and composer-suggestion
+   * registries constructed by the plugin apply (the same instances the slot inject
    * factories close over).
    */
   constructor(ctx: Context, config: {
     input: SessionInputResolver
     blocks: ComposerBlocks
+    suggestions: ComposerSuggestions
     maxConcurrentFileUploads: number
   }) {
     super(ctx, 'conversation')
     this.input = config.input
     this.blocks = config.blocks
+    this.suggestions = config.suggestions
     this.maxConcurrentFileUploads = config.maxConcurrentFileUploads
     ctx.effect(() => async () => {
       const operations = [...this.fileUploadOperations.values()]

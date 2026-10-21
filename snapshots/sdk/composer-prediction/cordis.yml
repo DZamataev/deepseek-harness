@@ -1,0 +1,10 @@
+# Live-recording composition for the auxiliary composer-prediction request: the
+# optional bundle's Host row replays the Session's own routed request.
+- insert:
+    - id: composer-prediction
+      name: '@deepseek-ai/dsh-experimental-composer-prediction'
+      config:
+        maxOutputTokens: 1024
+        timeoutMs: 60000
+        minAssistantMessages: 2
+        maxUncachedTokens: 10000

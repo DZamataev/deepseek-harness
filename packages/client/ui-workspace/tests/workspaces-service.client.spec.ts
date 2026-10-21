@@ -286,7 +286,15 @@ function bench(options: BenchOptions = {}) {
   ctx.effect(() => locale.register('workspace', { en, zh }))
   ctx.provide('locale', locale)
   const requestDraftInitialization = vi.fn<SessionInputResolver['requestDraftInitialization']>(() => 'applied')
-  if (options.conversation !== false) ctx.provide('conversation', { input: { requestDraftInitialization } })
+  if (options.conversation !== false) {
+    ctx.provide('conversation', {
+      input: { requestDraftInitialization },
+      suggestions: {
+        register: () => () => {},
+        storeFor: () => ({ getSnapshot: () => undefined, subscribe: () => () => {} }),
+      },
+    })
+  }
   const layout = new LayoutController({
     selectPanel: vi.fn(), retainMainPanels: vi.fn(),
     setSidebar: vi.fn(), toggleSidebar: vi.fn(), setViewportWidth: vi.fn(),

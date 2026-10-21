@@ -1,0 +1,67 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/experimental/composer-prediction/README.md
+/:
+  en: a4816b00d0cbaa1b
+  zh: d1a7ca0079473024
+/deepseek-ai-dsh-experimental-composer-prediction:
+  en: c22cd8f54d99eaf0
+  zh: a127cec5d263b7f3
+/deepseek-ai-dsh-experimental-composer-prediction/summary:
+  en: 3cb18034813e7f97
+  zh: 06ff8c669451c832
+/deepseek-ai-dsh-experimental-composer-prediction/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 97c8bce6f125b5b5
+/deepseek-ai-dsh-experimental-composer-prediction/use-this-package:
+  en: 6940a7c7a3a8cad1
+  zh: 42f92763b5e6b5e8
+/deepseek-ai-dsh-experimental-composer-prediction/use-this-package/when-predictions-run:
+  en: 2268acbc1a99f9a3
+  zh: d373adc0248deecf
+/deepseek-ai-dsh-experimental-composer-prediction/use-this-package/configuration:
+  en: 263362af5fb48ef5
+  zh: 0943e62eebcbe955
+/deepseek-ai-dsh-experimental-composer-prediction/use-this-package/failures-and-recovery:
+  en: 9fc72301d46cca86
+  zh: 23f8d037b0efca1f
+/deepseek-ai-dsh-experimental-composer-prediction/understand-the-implementation:
+  en: a58d3b3479e0b59d
+  zh: c2e924b95a27faeb
+/deepseek-ai-dsh-experimental-composer-prediction/understand-the-implementation/design-concept:
+  en: 152b3d08433e278b
+  zh: 5ad7ec4d4f187676
+/deepseek-ai-dsh-experimental-composer-prediction/understand-the-implementation/source-map:
+  en: eeeeb00975b7f523
+  zh: e868cf92fba2ab48
+/deepseek-ai-dsh-experimental-composer-prediction/understand-the-implementation/scheduling:
+  en: f70fffde01e122db
+  zh: 381f5c23c128ab8f
+/deepseek-ai-dsh-experimental-composer-prediction/further-exploration:
+  en: e6fcaca220ddb5bd
+  zh: f2bcb139e3da2141
+/deepseek-ai-dsh-experimental-composer-prediction/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-experimental-composer-prediction/model-experience/composer-prediction-request:
+  en: b3b3b8698f85dc6e
+  zh: d230a06a11622a28
+/deepseek-ai-dsh-experimental-composer-prediction/model-experience/composer-prediction-request/what-the-model-sees:
+  en: 497688b19d7ba44c
+  zh: fec41a9d3c97ea6a
+/deepseek-ai-dsh-experimental-composer-prediction/model-experience/composer-prediction-request/what-the-model-sees/prediction-instruction-final-user-message:
+  en: ced83b2ba0006ca4
+  zh: b54828203352182c
+/deepseek-ai-dsh-experimental-composer-prediction/model-experience/composer-prediction-request/token-effect:
+  en: 36967f5f8d92768a
+  zh: 054c45e0f6cb8165
+/deepseek-ai-dsh-experimental-composer-prediction/model-experience/composer-prediction-request/kv-cache-effect:
+  en: 2d2aea3bd85df170
+  zh: 0643b8f3debb72ff
+/deepseek-ai-dsh-experimental-composer-prediction/known-limitations-and-deferred-work:
+  en: 07c412a4d43963c6
+  zh: bfcac745e13f78ee
+/deepseek-ai-dsh-experimental-composer-prediction/known-limitations-and-deferred-work/dev-note:
+  en: e67f633dc6fe7773
+  zh: 3bb0c20c93f16f98

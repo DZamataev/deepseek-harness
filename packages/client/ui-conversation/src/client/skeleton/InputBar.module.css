@@ -226,6 +226,72 @@
   user-select: none;
 }
 
+/* Ghost suggestion: caption ink like the placeholder, upright because the
+   text is a prediction rather than quoted copy. */
+.suggestion {
+  color: var(--dsw-alias-label-caption);
+  font-style: normal;
+}
+
+/* Reserve the accepting key's corner so the ellipsized ghost never runs
+   under it. */
+.placeholderSuggestion {
+  padding-right: 44px;
+}
+
+/* The accepting key occupies the placeholder's trailing corner. It is a real
+   button so screen-reader touch navigation can activate it, but it carries no
+   tab stop: the editor's Tab and Right arrow gestures are the keyboard path.
+   Native button chrome is reset to the keycap look, and its 24px minimum keeps
+   a real target on touch, where no Tab key exists. */
+.suggestionKey {
+  appearance: none;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  position: absolute;
+  inset: 4px 8px auto auto;
+  pointer-events: auto;
+  cursor: pointer;
+  margin: 0;
+  padding: 0 6px;
+  background-color: transparent;
+  border-radius: var(--dsw-radius-xs);
+  border: 1px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-caption);
+  font: inherit;
+  font-size: 0.85em;
+  line-height: 1.6;
+  user-select: none;
+}
+
+/* The visible keycap inherits the button's metrics instead of the browser's
+   monospace <kbd> default. */
+.suggestionKeycap {
+  font: inherit;
+}
+
+/* An IME composition hides the placeholder layer; the hint leaves with it. */
+.input[data-composer-composing] ~ .suggestionKey {
+  visibility: hidden;
+}
+
+/* The suggestion description the editable references through
+   aria-describedby: present for assistive technology, out of the visual and
+   pointer layout. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 .inputDisabled {
   color: var(--dsw-alias-label-tertiary);
   cursor: not-allowed;

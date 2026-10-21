@@ -30,6 +30,7 @@ import { relativizeToCwd, workspaceTitleOf } from '@deepseek-ai/dsh-util-workspa
 import { ConversationController, UnsupportedImageMediaTypeError, isImageMediaType } from './service.ts'
 import type { IConversation } from './service.ts'
 import { ComposerBlockRegistry } from './input/blocks.ts'
+import { ComposerSuggestionRegistry } from './input/suggestions.ts'
 import type { ComposerBlock } from './contract/composer-blocks.ts'
 import { InputHub } from './input/hub.ts'
 import { ComposerSubmissionPolicy } from './input/submission-policy.ts'
@@ -88,6 +89,10 @@ const ABSENT_LEXICON = {
 }
 const ABSENT_MENU_LAUNCHER = {
   getSnapshot: (): string | null => null,
+  subscribe: () => () => {},
+}
+const ABSENT_SUGGESTION = {
+  getSnapshot: (): string | undefined => undefined,
   subscribe: () => () => {},
 }
 const EMPTY_FILE_UPLOADS: DraftFileUploads = {}
@@ -294,6 +299,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
 
   const inputHub = new InputHub(ctx, t)
   const composerBlocks = new ComposerBlockRegistry()
+  const composerSuggestions = new ComposerSuggestionRegistry()
 
   ctx.inject(['commandUi'], (scope) => {
     const commands = scope.get('commandUi') as FileCommandRegistry
@@ -476,6 +482,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
             notices: ABSENT_NOTICES,
             lexicon: ABSENT_LEXICON,
             menuLauncher: ABSENT_MENU_LAUNCHER,
+            composerSuggestion: ABSENT_SUGGESTION,
           },
         }
       }
@@ -552,6 +559,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
           notices: shell.notices,
           lexicon: shell.lexicon,
           menuLauncher: inputTriggers?.launcher ?? ABSENT_MENU_LAUNCHER,
+          composerSuggestion: composerSuggestions.storeFor(sessionId),
         },
       }
     },
@@ -574,6 +582,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   ctx.plugin(ConversationController, {
     input: inputHub,
     blocks: composerBlocks,
+    suggestions: composerSuggestions,
     maxConcurrentFileUploads,
   })
   ctx.plugin(todoDockEntry)

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Composer prediction",
+    "description": "Shows the predicted next message as the composer placeholder"
+  }
+}

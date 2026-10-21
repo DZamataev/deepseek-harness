@@ -1,6 +1,7 @@
 /** DOM and keymap bindings installed by the InputBar's existing effects. */
 import type { MouseEvent, MutableRefObject, RefObject } from 'react'
 import type { LexicalEditor } from 'lexical'
+import { $getRoot } from 'lexical'
 import type { ComposerKeyboard } from '../../contract/draft-editor.ts'
 import type { ComposerBarProps } from '../../contract/slots.ts'
 import type { BusyEnterBehavior } from '../../contract/composer-submission.ts'
@@ -19,6 +20,10 @@ interface DraftViewGate {
   showToast: (text: string) => void
   t: ComposerBarProps['t']
   canAcceptDrop: boolean
+  /** Visible composer suggestion text; undefined while hidden. */
+  suggestion: string | undefined
+  /** Write accepted suggestion text as the draft (never submits). */
+  acceptSuggestion: (text: string) => void
 }
 
 /**
@@ -141,15 +146,24 @@ export function installDraftKeymap(
       if (gate.current.machineBusy || gate.current.locked) return
       keyboard.paste(text)
     },
+    acceptSuggestion: () => {
+      const { suggestion, locked, machineBusy } = gate.current
+      if (suggestion === undefined || locked || machineBusy) return false
+      // The live document decides emptiness: React state lags a character typed this frame.
+      const empty = editor.getEditorState().read(() => $getRoot().getTextContent() === '')
+      if (!empty) return false
+      gate.current.acceptSuggestion(suggestion)
+      return true
+    },
   })
 }
 
 /**
- * Keep a toolbar press from moving focus away from the draft.
- * @param event - the toolbar button's mouse event.
+ * Keep a pointer press on a composer affordance from moving focus away from the draft.
+ * @param event - the pressed element's mouse event.
  * @param editor - the borrowed editor, absent in the inert view.
  */
-export function keepDraftFocus(event: MouseEvent<HTMLButtonElement>, editor: LexicalEditor | null): void {
+export function keepDraftFocus(event: MouseEvent<HTMLElement>, editor: LexicalEditor | null): void {
   event.preventDefault()
   editor?.getRootElement()?.focus({ preventScroll: true })
 }

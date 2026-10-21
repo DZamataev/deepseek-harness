@@ -1,0 +1,34 @@
+# Bilingual-pair consistency record for 2026-10-20-composer-prediction.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-20-composer-prediction.md
+/agent-note-composer-prediction:
+  en: f6534a4a03662455
+  zh: fe5955f0ac4331d3
+/agent-note-composer-prediction/problem:
+  en: 7ecda1546fa0664b
+  zh: 105b15776ea7c96e
+/agent-note-composer-prediction/decision:
+  en: 616bca69c465ee0a
+  zh: eb612df6430c8585
+/agent-note-composer-prediction/decision/host-plugin-deepseek-ai-dsh-experimental-composer-prediction:
+  en: f94302134213f843
+  zh: 58c63f4cd5f06ac7
+/agent-note-composer-prediction/decision/product-seam-composer-suggestion-in-dsh-client-ui-conversation:
+  en: 1529611ace177c83
+  zh: 0568934967326a57
+/agent-note-composer-prediction/decision/client-plugin-and-bundle:
+  en: 3d274ad374213ecc
+  zh: de6233be002c4d96
+/agent-note-composer-prediction/decision/documentation:
+  en: 2c3e2d58d6643ff3
+  zh: de595d5b6e3037a5
+/agent-note-composer-prediction/alternatives-considered:
+  en: 94dbe9608589bd0e
+  zh: abdcdd518bca73fd
+/agent-note-composer-prediction/consequences:
+  en: d20df098d16dd57c
+  zh: c8ea23ba245e311e
+/agent-note-composer-prediction/testing:
+  en: d637d3ae3e7e148e
+  zh: f43a3197b1cb851e

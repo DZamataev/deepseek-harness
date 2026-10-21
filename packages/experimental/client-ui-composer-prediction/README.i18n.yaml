@@ -1,0 +1,43 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/experimental/client-ui-composer-prediction/README.md
+/:
+  en: f42a868ed847725f
+  zh: d1da75174019c6d0
+/deepseek-ai-dsh-experimental-client-ui-composer-prediction:
+  en: 9c7f0a1c096c0d58
+  zh: 7f9efa0669d96218
+/deepseek-ai-dsh-experimental-client-ui-composer-prediction/summary:
+  en: 0d1f44e82cc48c3a
+  zh: d4b26a8d44a20c68
+/deepseek-ai-dsh-experimental-client-ui-composer-prediction/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 97c8bce6f125b5b5
+/deepseek-ai-dsh-experimental-client-ui-composer-prediction/use-this-package:
+  en: 7c83776f0aff7eec
+  zh: f6b133198b72e479
+/deepseek-ai-dsh-experimental-client-ui-composer-prediction/use-this-package/what-appears-in-the-composer:
+  en: fa5d97dff7bfce23
+  zh: 4a8f13f2a4a83e20
+/deepseek-ai-dsh-experimental-client-ui-composer-prediction/use-this-package/failure-behavior:
+  en: 3bba8be3a46fe7a8
+  zh: 6e0fecd33853acf5
+/deepseek-ai-dsh-experimental-client-ui-composer-prediction/understand-the-implementation:
+  en: cbdfc5cd7511dde5
+  zh: 8dc3a17cfce662e0
+/deepseek-ai-dsh-experimental-client-ui-composer-prediction/further-exploration:
+  en: 9e6d8939ca1e9643
+  zh: 327272f8c06129b8
+/deepseek-ai-dsh-experimental-client-ui-composer-prediction/model-experience:
+  en: 3ea4dfcf73c812fd
+  zh: e7762083028cb35f
+/deepseek-ai-dsh-experimental-client-ui-composer-prediction/model-experience/kv-cache-effect:
+  en: 5641d29dcc7c36a8
+  zh: 2c0e7c7804a3362c
+/deepseek-ai-dsh-experimental-client-ui-composer-prediction/known-limitations-and-deferred-work:
+  en: 3384b9beed086b76
+  zh: cdb5914377e0168f
+/deepseek-ai-dsh-experimental-client-ui-composer-prediction/known-limitations-and-deferred-work/dev-note:
+  en: e67f633dc6fe7773
+  zh: 3bb0c20c93f16f98
