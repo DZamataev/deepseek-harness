@@ -150,6 +150,14 @@ export interface PiAiProviderProfile {
   defaultInput?: PiAiModality[]
   /** Provider request headers, validated against Fetch when the profile resolves; Harness attribution wins reserved names. */
   headers?: Record<string, string>
+  /**
+   * Claude Code version this Anthropic Messages route presents itself as, for a
+   * relay that admits only Claude Code traffic: the Claude Code identity system
+   * block first, `claude-cli/<version>` client headers instead of Harness
+   * attribution, and the conversation's session id in `x-claude-code-session-id`.
+   * Relays refuse versions older than a model requires.
+   */
+  claudeCodeVersion?: string
   /** Provider-neutral pi-ai reasoning level. */
   reasoning?: ModelThinkingLevel
   /** Token budgets used by reasoning providers that support them. */
@@ -335,6 +343,7 @@ const profile = z.object({
   defaultMaxTokens: z.number().step(1).min(1).default(DEFAULT_MAX_TOKENS),
   defaultInput: z.array(z.union(MODALITIES)).default([...DEFAULT_INPUT]),
   headers: z.dict(z.string()),
+  claudeCodeVersion: z.string(),
   reasoning: z.union(THINKING_LEVELS),
   thinkingBudgets,
   cacheRetention: z.union(['none', 'short', 'long']),
@@ -486,6 +495,15 @@ export function resolveProfiles(
     } catch (error) {
       if (validation === 'strict' || !(error instanceof PiAiCatalogError)) throw error
       catalogError ??= error.message
+    }
+    if (source.claudeCodeVersion !== undefined) {
+      if (source.claudeCodeVersion.length === 0) {
+        throw new Error(`llm-pi-ai: provider "${provider}" claudeCodeVersion must be non-empty`)
+      }
+      const foreign = catalog?.models.find(model => model.api !== 'anthropic-messages')
+      if (foreign !== undefined) {
+        throw new Error(`llm-pi-ai: provider "${provider}" claudeCodeVersion requires anthropic-messages models; "${foreign.id}" uses ${foreign.api}`)
+      }
     }
     const { apiKeyEnv, retryPolicy, models: _models, displayName: _displayName, ...rest } = source
     resolved.set(provider, {
