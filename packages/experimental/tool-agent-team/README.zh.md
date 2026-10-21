@@ -63,6 +63,37 @@ kind: "package-reference"
 
 创建和列表结果使用 `target` 标识成员，不包含成员 Session ID。可将该值用于消息和中断调用，或任务工具的 `owner` 参数；任务的 `ownerName` 使用相同值。`inactive` 表示没有轮次在执行，包括已加载和需要恢复的成员；它不表示任务完成或结果。`provisioning` 与 `failed` 描述成员创建状态。任何成员都可以给任何其他成员发消息并使用任务板；只有 Lead 可以创建与中断 teammate。任务更新保留领域的 owner 与 revision 校验，因此过期的编辑会被拒绝，而不是覆盖更新的成果。
 
+### 让 teammate 使用其他模型
+
+两个可选设置让 Lead 在另一条 LLM 路由上启动 teammate。`models` 列出 Lead 可以选择的精确 `provider`/`model` 路由；`roles` 定义具名预设，包含描述、路由、可选的 `reasoningEffort` 和可选的 `instructions`。角色的路由无需在 `models` 中重复即被允许。这里的 provider id 指 profile 中注册的 LLM 提供方，而不是 subagent 提供方 `freshProvider` 与 `forkProvider`。
+
+```yaml
+- id: tool-agent-team
+  name: '@deepseek-ai/dsh-experimental-tool-agent-team'
+  config:
+    models:
+      - provider: anthropic
+        model: claude-sonnet-5-5
+      - provider: codex-lb
+        model: gpt-6.1-sol
+    roles:
+      gpt-reviewer:
+        description: Reviews diffs and plans on a second model
+        provider: codex-lb
+        model: gpt-6.1-sol
+        reasoningEffort: high
+        instructions: Review critically. Verify claims against the code and report concrete findings.
+```
+
+| 字段 | 默认值 | 含义 |
+|---|---|---|
+| `models` | `[]` | Lead 可以用 `provider` 与 `model` 选择的精确路由；重复路由或空字段会在加载时失败 |
+| `roles` | `{}` | Lead 用 `role` 选择的预设；名字不匹配 `^[a-z][a-z0-9-]*$`，或 `description`、`provider`、`model` 为空，会在加载时失败 |
+
+任一设置非空时，`spawn_teammate` 增加可选参数：`role`（角色名枚举），或成对的 `provider` 与 `model`，以及替换角色 effort 的 `reasoning_effort`。参数描述以 `name: description (provider/model, effort)` 列出每个角色，并列出每条允许的路由。全部省略时 teammate 使用 Lead 路由；两个设置都为空时工具 schema 保持不变。`role` 与 `provider` 或 `model` 同时出现、路由不在允许列表中、没有角色或路由却给出 `reasoning_effort`，都会失败。工具在创建 teammate 之前通过运行中的 LLM 运行时解析所选路由，因此未知的提供方、模型或 effort 会直接失败，不会消耗 teammate 名字。带 `instructions` 的角色会先发送一个文本块 `Role "<role>": <instructions>`，再发送 Lead 的任务。
+
+创建和列表结果为 Lead 与每个 teammate 报告 `llmProvider`、`model`，以及已设置时的 `reasoningEffort`，让成员看到每个成员运行的模型。配置了任一设置时，共享策略增加一句：用自己的工具调用核实跨模型审阅者的结论，并把分歧当作需要调查的信号。
+
 ### 成功与失败的表现
 
 `send_message` 在收件箱接收消息后返回 `{ "sent": true }`，不暴露消息 ID。成功不表示接收方已处理消息，也不保证同步刷新到存储；发送失败会作为工具错误报告。当没有其他成员 running 或 provisioning 时，`wait_agent` 会立即返回 `noProgress`，提示调用方先唤醒 teammate；否则它会等待下一次变化，调用方随后重新读取状态。基于过期 revision 的任务编辑会被拒绝，而不是覆盖更新的成果。
@@ -92,6 +123,7 @@ kind: "package-reference"
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口：配置、固定策略文本与九个 scoped 工具注册 |
+| [`src/routes.ts`](src/routes.ts) | 路由与角色校验、`spawn_teammate` 路由选择，以及 LLM 运行时预检 |
 
 ### 策略与工具
 
@@ -124,15 +156,15 @@ member scope 上的一个 `team:policy` 段落说明共享的协作规则；固�
 
 #### 模型看到什么
 
-共享系统 policy 覆盖 Team 可用性、共享 cwd 安全、任务协调、Steer 投递、inbox 接收和 Lead 等待责任。Lead 与 teammate 使用相同的九个 schema；执行时落实 Lead-only 操作。必需的 runtime context 声明 `You are the Team Lead named "lead".`，或 `You are teammate "<name>".` 与 `Your Team Lead is named "lead".`，并提供 roster 和消息操作说明。身份来自当前 Team membership，关闭可选 context 时仍保留，压缩移除快照后会恢复。从 teammate 创建的普通 fork 会收到当前 Lead 身份。
+共享系统 policy 覆盖 Team 可用性、共享 cwd 安全、任务协调、Steer 投递、inbox 接收和 Lead 等待责任。Lead 与 teammate 使用相同的九个 schema；执行时落实 Lead-only 操作。必需的 runtime context 声明 `You are the Team Lead named "lead".`，或 `You are teammate "<name>".` 与 `Your Team Lead is named "lead".`，并提供 roster 和消息操作说明。身份来自当前 Team membership，关闭可选 context 时仍保留，压缩移除快照后会恢复。从 teammate 创建的普通 fork 会收到当前 Lead 身份。配置了 `models` 或 `roles` 时，`spawn_teammate` 还带有路由参数，策略也会加入跨模型审阅的那一句。
 
 #### Token 影响
 
-每次 Team member 请求都有固定策略与 schema 成本。身份是完整 runtime-context 快照的一部分。保留的快照未变化时不追加消息；context 变化或被移除时，loop 追加包含身份的完整快照。工具调用会增加紧凑 JSON roster、task、wait 或 receipt 结果。Peer 内容由 Team 领域保留在 target 历史中。
+每次 Team member 请求都有固定策略与 schema 成本。身份是完整 runtime-context 快照的一部分。保留的快照未变化时不追加消息；context 变化或被移除时，loop 追加包含身份的完整快照。工具调用会增加紧凑 JSON roster、task、wait 或 receipt 结果。Peer 内容由 Team 领域保留在 target 历史中。配置的角色与路由会把名字、描述和路由加入 `spawn_teammate` schema，成员行也会增加 LLM 路由字段。
 
 #### KV Cache 影响
 
-provider／model、共享 system 策略和工具 schema 相同时，fork 保留父请求前缀并追加任务与当前 runtime context。工具结果与 peer 消息追加在可复用请求前缀之后。原先在 system prompt 中记录身份的 Session，首次使用此布局请求时可能改变该前缀；提供方实际缓存命中仍为尽力而为。
+provider／model、共享 system 策略和工具 schema 相同时，fork 保留父请求前缀并追加任务与当前 runtime context。工具结果与 peer 消息追加在可复用请求前缀之后。使用不同提供方或模型的 teammate 发送不同的请求前缀，不会复用 Lead 的提供方缓存。原先在 system prompt 中记录身份的 Session，首次使用此布局请求时可能改变该前缀；提供方实际缓存命中仍为尽力而为。
 
 ## 已知限制与延期工作
 

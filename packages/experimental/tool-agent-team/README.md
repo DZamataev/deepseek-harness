@@ -63,6 +63,37 @@ The nine tools group into four capabilities:
 
 Creation and listing results identify members by `target`, with no member Session ID. Use that value in message and interrupt calls or the task tools’ `owner` parameter; task `ownerName` uses the same value. `inactive` means no turn is executing, whether the member is loaded or must be resumed; it does not describe task completion or outcome. `provisioning` and `failed` describe member creation. Any member can message any other member and use the task board; only the Lead creates and interrupts teammates. Task updates keep the domain's owner and revision checks, so an outdated edit is rejected instead of overwriting newer work.
 
+### Run teammates on other models
+
+Two optional settings let the Lead start a teammate on another LLM route. `models` lists exact `provider`/`model` routes the Lead may pick; `roles` names presets with a description, a route, an optional `reasoningEffort`, and optional `instructions`. A role's route is allowed without repeating it under `models`. These provider ids name LLM providers registered in the profile, not the subagent providers `freshProvider` and `forkProvider`.
+
+```yaml
+- id: tool-agent-team
+  name: '@deepseek-ai/dsh-experimental-tool-agent-team'
+  config:
+    models:
+      - provider: anthropic
+        model: claude-sonnet-5-5
+      - provider: codex-lb
+        model: gpt-6.1-sol
+    roles:
+      gpt-reviewer:
+        description: Reviews diffs and plans on a second model
+        provider: codex-lb
+        model: gpt-6.1-sol
+        reasoningEffort: high
+        instructions: Review critically. Verify claims against the code and report concrete findings.
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `models` | `[]` | Exact routes the Lead may select with `provider` and `model`; a repeated route or an empty field fails at load |
+| `roles` | `{}` | Presets the Lead selects with `role`; a name outside `^[a-z][a-z0-9-]*$` or an empty `description`, `provider`, or `model` fails at load |
+
+With either setting non-empty, `spawn_teammate` gains optional parameters: `role`, an enum of the role names, or `provider` with `model`, plus `reasoning_effort`, which replaces a role's effort. Their descriptions list each role as `name: description (provider/model, effort)` and every allowed route. Omitting all of them starts the teammate on the Lead route; with both settings empty the tool schema stays unchanged. A `role` combined with `provider` or `model`, a route outside the allowed list, and `reasoning_effort` without a role or route each fail. The tool resolves the selected route through the live LLM runtime before it creates the teammate, so an unknown provider, model, or effort fails without consuming the teammate name. A role with `instructions` sends them as a first text block, `Role "<role>": <instructions>`, before the Lead's task.
+
+Creation and listing rows report `llmProvider`, `model`, and, when set, `reasoningEffort` for the Lead and every teammate, so members see which model each one runs. When either setting is configured, the shared policy adds one sentence: verify a cross-model reviewer's claims with your own tool calls and treat disagreement as a signal to investigate.
+
 ### What success and failure look like
 
 `send_message` returns `{ "sent": true }` after inbox acceptance, without exposing the message ID. Success does not confirm recipient processing or a synchronous storage flush; send failures are reported as tool errors. `wait_agent` returns `noProgress` right away when no other member is running or provisioning, telling the caller to wake a teammate first; otherwise it waits for the next change and the caller re-reads state afterward. Task edits based on an outdated revision are rejected rather than overwriting newer work.
@@ -92,6 +123,7 @@ The [Agent Teams Agent Note](../../../.agents/notes/implemented/feature/2026-08-
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: config, the fixed policy text, and the nine scoped tool registrations |
+| [`src/routes.ts`](src/routes.ts) | Route and role validation, `spawn_teammate` route selection, and the LLM runtime preflight |
 
 ### Policy and tools
 
@@ -124,15 +156,15 @@ Read these pages when the package-level contract is not enough. They move from t
 
 #### What the model sees
 
-One shared system policy covers Team availability, shared-cwd safety, task coordination, Steer delivery, inbox acceptance, and the Lead’s duty to wait. All nine schemas are identical for Leads and teammates; execution enforces Lead-only operations. Required runtime context states `You are the Team Lead named "lead".` or `You are teammate "<name>".` with `Your Team Lead is named "lead".`, plus roster and messaging instructions. Identity comes from current Team membership, survives optional-context suppression, and is restored when compaction removes its snapshot. An ordinary fork from a teammate receives its current Lead identity.
+One shared system policy covers Team availability, shared-cwd safety, task coordination, Steer delivery, inbox acceptance, and the Lead’s duty to wait. All nine schemas are identical for Leads and teammates; execution enforces Lead-only operations. Required runtime context states `You are the Team Lead named "lead".` or `You are teammate "<name>".` with `Your Team Lead is named "lead".`, plus roster and messaging instructions. Identity comes from current Team membership, survives optional-context suppression, and is restored when compaction removes its snapshot. An ordinary fork from a teammate receives its current Lead identity. With `models` or `roles` configured, `spawn_teammate` also carries the route parameters and the policy adds its cross-model review sentence.
 
 #### Token effect
 
-Fixed policy and schema cost on every Team member request. Identity is part of the complete runtime-context snapshot. An unchanged retained snapshot adds no message; changed or removed context causes the loop to append a complete snapshot, including identity. Tool calls add compact JSON roster, task, wait, or receipt results. Peer content is retained by the Team domain in the target's history.
+Fixed policy and schema cost on every Team member request. Identity is part of the complete runtime-context snapshot. An unchanged retained snapshot adds no message; changed or removed context causes the loop to append a complete snapshot, including identity. Tool calls add compact JSON roster, task, wait, or receipt results. Peer content is retained by the Team domain in the target's history. Configured roles and routes add their names, descriptions, and routes to the `spawn_teammate` schema, and member rows add their LLM route fields.
 
 #### KV Cache effect
 
-With the same provider/model, shared system policy, and tool schemas, a fork retains the parent request prefix and appends its task and current runtime context. Tool results and peer messages append after the reusable request prefix. Sessions recorded with identity inside the system prompt can change that prefix on their first request under this layout; actual provider cache hits remain best-effort.
+With the same provider/model, shared system policy, and tool schemas, a fork retains the parent request prefix and appends its task and current runtime context. Tool results and peer messages append after the reusable request prefix. A teammate on a different provider or model sends a different request prefix and does not reuse the Lead's provider cache. Sessions recorded with identity inside the system prompt can change that prefix on their first request under this layout; actual provider cache hits remain best-effort.
 
 ## Known Limitations and Deferred Work
 
