@@ -132,9 +132,7 @@ export class TeamRoster {
       name: 'lead',
       role: 'lead',
       status: availability(root),
-      ...root.options.model === undefined ? {} : { model: root.options.model },
-      ...root.options.provider === undefined ? {} : { llmProvider: root.options.provider },
-      ...root.options.reasoningEffort === undefined ? {} : { reasoningEffort: root.options.reasoningEffort },
+      ...routeFields(liveRoute(root)),
       diagnostics: [],
     }]
     for (const member of state.members) {
@@ -492,22 +490,62 @@ function memberRecord(root: Agent, member: TeamMemberSnapshot): SessionEventMap[
   return { version: member.llmProvider === undefined ? 2 : 3, teamId: TeamId(root.id), member }
 }
 
+/** Route fields one member row reports; an undefined field is omitted from the row. */
+type MemberRoute = { readonly [K in keyof TeammateRoute]?: TeammateRoute[K] | undefined }
+
 /**
- * Resolve a teammate's LLM route fields: the live Agent's options, else the
- * recorded route, else the Lead's options for provider and model.
+ * Resolve the route a live Agent runs on: its last logged request header, else
+ * its Agent options.
+ */
+function liveRoute(agent: Agent): MemberRoute {
+  const { provider, model, reasoningEffort } = agent.options
+  return loggedRoute(agent) ?? { provider, model, reasoningEffort }
+}
+
+/**
+ * Read the complete route of an Agent's last logged request header. Product
+ * model pickers choose the request route during prompt assembly without
+ * changing Agent options, so the logged header is the authoritative live
+ * value. An adapter-defaulted effort is not a route choice and is omitted,
+ * matching the session controller's model selection.
+ */
+function loggedRoute(agent: Agent): MemberRoute | undefined {
+  const header = agent.session.requestHeader()
+  if (header === undefined) return undefined
+  const { provider, model, reasoningEffort } = header.config
+  return {
+    provider,
+    model,
+    reasoningEffort: header.adapterDefaults?.reasoningEffort === true ? undefined : reasoningEffort,
+  }
+}
+
+/**
+ * Resolve a teammate's LLM route fields: a loaded teammate's logged route as a
+ * whole; otherwise, per field, its Agent options, the recorded route, then the
+ * Lead's live route for provider and model.
  */
 function teammateRoute(
   member: TeamMemberSnapshot,
   live: Agent | undefined,
   root: Agent,
 ): Pick<TeamMemberView, 'model' | 'llmProvider' | 'reasoningEffort'> {
-  const model = live?.options.model ?? member.llmModel ?? root.options.model
-  const llmProvider = live?.options.provider ?? member.llmProvider ?? root.options.provider
-  const reasoningEffort = live?.options.reasoningEffort ?? member.llmReasoningEffort
+  const logged = live === undefined ? undefined : loggedRoute(live)
+  if (logged !== undefined) return routeFields(logged)
+  const lead = liveRoute(root)
+  return routeFields({
+    provider: live?.options.provider ?? member.llmProvider ?? lead.provider,
+    model: live?.options.model ?? member.llmModel ?? lead.model,
+    reasoningEffort: live?.options.reasoningEffort ?? member.llmReasoningEffort,
+  })
+}
+
+/** Map a resolved route onto member-row field names, omitting absent fields. */
+function routeFields(route: MemberRoute): Pick<TeamMemberView, 'model' | 'llmProvider' | 'reasoningEffort'> {
   return {
-    ...model === undefined ? {} : { model },
-    ...llmProvider === undefined ? {} : { llmProvider },
-    ...reasoningEffort === undefined ? {} : { reasoningEffort },
+    ...route.model === undefined ? {} : { model: route.model },
+    ...route.provider === undefined ? {} : { llmProvider: route.provider },
+    ...route.reasoningEffort === undefined ? {} : { reasoningEffort: route.reasoningEffort },
   }
 }
 

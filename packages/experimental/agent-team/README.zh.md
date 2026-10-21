@@ -59,7 +59,7 @@ kind: "package-reference"
 
 请 Lead 创建 teammate：给它一个唯一的小写名字（例如 `reviewer`）并描述其职责。teammate 可以 fresh 启动（不携带 Lead 对话的任何记忆），也可以作为 fork 启动（继承 Lead 已完成的轮次）；创建请求决定用哪种。teammate 名字是永久的——即使创建失败的 teammate 也保留其名字，任何名字都不会被复用。
 
-创建请求还可以为 teammate 指定 LLM 路由：一个 provider 和一个 model，以及可选的推理强度。未指定路由时 teammate 继承 Lead 的路由；已记录的路由在重启后仍属于该 teammate，即使 teammate 未加载，roster 也会报告它。
+创建请求还可以为 teammate 指定 LLM 路由：一个 provider 和一个 model，以及可选的推理强度。未指定路由时 teammate 继承 Lead 的路由；已记录的路由在重启后仍属于该 teammate，即使 teammate 未加载，roster 也会报告它。对于 Lead 和每个已加载的 teammate，roster 报告该成员最近一次记录的请求所用的路由，其中包括在 GUI 模型选择器中选定的模型；首次请求之前则报告 Agent 选项。由适配器默认填入的推理强度不会被报告。
 
 roster 显示每个成员的职责（`lead` 或 `teammate`）与当前状态：`running`、`inactive`（当前没有执行轮次，包括已加载和仅存储的成员）、`provisioning` 或 `failed`。未加载的成员会在唤醒后收到其消息。
 

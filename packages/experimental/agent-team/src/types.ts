@@ -70,11 +70,17 @@ export interface TeamMemberView {
   readonly description?: string
   readonly provider?: string
   readonly context?: 'fresh' | 'fork'
-  /** LLM model of the live Agent, else the recorded teammate route, else the Lead's model. */
+  /**
+   * LLM model of the live Agent's last logged request header, else its Agent
+   * options, else the recorded teammate route, else the Lead's resolved model.
+   */
   readonly model?: string
   /** LLM provider resolved in the same order as {@link model}; {@link provider} is the subagent provider. */
   readonly llmProvider?: string
-  /** Reasoning effort of the live Agent or the recorded teammate route, when either names one. */
+  /**
+   * Reasoning effort resolved like {@link model} without the Lead fallback; an
+   * adapter-defaulted logged effort is omitted.
+   */
   readonly reasoningEffort?: ReasoningEffortId
   readonly diagnostics: string[]
 }

@@ -292,6 +292,9 @@ describe('Team identity and provisioning', () => {
       model: 'lead-model',
       reasoningEffort: effort,
     })
+    // Before its first logged request the Lead row reports the Agent options.
+    expect(ctx.agentTeams.listMembers(lead)[0])
+      .toMatchObject({ llmProvider: 'reasoning', model: 'lead-model', reasoningEffort: effort })
     const startActivation = vi.spyOn(ctx.subagents, 'startActivation')
 
     const started = await spawn(ctx, lead, 'inherited-worker')
@@ -307,6 +310,55 @@ describe('Team identity and provisioning', () => {
     expect(leadRow).toMatchObject({ llmProvider: 'reasoning', model: 'lead-model', reasoningEffort: effort })
     expect(inheritedRow).toMatchObject({ status: 'inactive', llmProvider: 'reasoning', model: 'lead-model' })
     expect(inheritedRow).not.toHaveProperty('reasoningEffort')
+  })
+
+  it('reports the logged request route of a live Lead over its Agent options', async () => {
+    const { ctx, lead } = await setup([])
+    expect(ctx.agentTeams.listMembers(lead)[0]).toMatchObject({ llmProvider: 'mock', model: 'mock' })
+
+    const effort = ReasoningEffortId('high')
+    lead.session.append('request/header', {
+      header: { config: { provider: 'picked', model: 'picked-model', reasoningEffort: effort } },
+      reason: 'initial',
+    })
+    expect(lead.options).toMatchObject({ provider: 'mock', model: 'mock' })
+    expect(ctx.agentTeams.listMembers(lead)[0])
+      .toMatchObject({ llmProvider: 'picked', model: 'picked-model', reasoningEffort: effort })
+
+    vi.spyOn(teamInternals(ctx).roster, 'checkpointInitialPrompt').mockResolvedValueOnce()
+    vi.spyOn(ctx.subagents, 'startActivation').mockImplementationOnce(async spec => ({
+      result: Promise.resolve({ output: [], stopReason: 'completed' as const }),
+      dispose: async () => {},
+      childId: spec.childId!,
+      messageId: createUserMessage({ content: content('accepted'), source: { kind: 'user' } }).id,
+    }))
+    const inherited = await spawn(ctx, lead, 'inherited-worker')
+    // An unloaded unrouted teammate reports the Lead's logged provider and model, not its effort.
+    expect(inherited.member).toMatchObject({ status: 'inactive', llmProvider: 'picked', model: 'picked-model' })
+    expect(inherited.member).not.toHaveProperty('reasoningEffort')
+  })
+
+  it('reports the logged request route of a live teammate and omits an adapter-defaulted effort', async () => {
+    const { ctx, lead } = await setup(['hang'])
+    const started = await spawn(ctx, lead, 'picked-worker')
+    const worker = await waitRunning(ctx, started.member.id)
+    worker.session.append('request/header', {
+      header: {
+        config: { provider: 'picked', model: 'picked-model', reasoningEffort: ReasoningEffortId('medium') },
+        adapterDefaults: { reasoningEffort: true },
+      },
+      reason: worker.session.requestHeader() === undefined ? 'initial' : 'change',
+    })
+    expect(worker.options).toMatchObject({ provider: 'mock', model: 'mock' })
+    const [leadRow, workerRow] = ctx.agentTeams.listMembers(lead)
+    expect(leadRow).toMatchObject({ llmProvider: 'mock', model: 'mock' })
+    expect(workerRow).toMatchObject({ status: 'running', llmProvider: 'picked', model: 'picked-model' })
+    expect(workerRow).not.toHaveProperty('reasoningEffort')
+
+    ctx.agentTeams.interrupt(lead, 'picked-worker')
+    await waitNoAgent(ctx, worker.id)
+    // An unloaded unrouted teammate falls back to the Lead route.
+    expect(ctx.agentTeams.listMembers(lead)[1]).toMatchObject({ status: 'inactive', llmProvider: 'mock', model: 'mock' })
   })
 
   it('rejects an incomplete teammate route before provisioning', async () => {

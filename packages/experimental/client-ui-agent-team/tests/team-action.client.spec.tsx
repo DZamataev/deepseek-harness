@@ -173,6 +173,24 @@ describe('TeamAction', () => {
     expect(screen.getByRole('button', { name: /^worker.*运行中/u })).toBeTruthy()
   })
 
+  it('shows a routed teammate model from the roster row until its Session projection is open', () => {
+    const routed: TeamMemberProjection = { ...worker, llmProvider: 'p', llmModel: 'routed-model' }
+    const b = bench({
+      projections: {
+        [SESSION]: { state: 'ready', error: null, values: { agentTeam: { members: [lead, routed], tasks: [task] } } },
+      },
+    })
+    render(<TeamAction {...b.props} />)
+    openPanel()
+    expect(screen.getByRole('button', { name: /^worker.*routed-model/u })).toBeTruthy()
+
+    setProjectionSnapshot(b.sessions, WORKER, {
+      state: 'ready', error: null,
+      values: { modelSelection: { lastUsed: null, next: { provider: 'p', model: 'picked-model' } } },
+    })
+    expect(screen.getByRole('button', { name: /^worker.*picked-model/u })).toBeTruthy()
+  })
+
   it('reads the Lead projection from an addressed teammate conversation', () => {
     const b = bench({ sessionId: WORKER, parentSessionId: SESSION })
     render(<TeamAction {...b.props} />)
