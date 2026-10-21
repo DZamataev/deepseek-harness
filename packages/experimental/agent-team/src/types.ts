@@ -1,6 +1,6 @@
 /** Public Agent Teams identities, durable records, and service request values. */
 
-import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
+import type { MessageId, ReasoningEffortId } from '@deepseek-ai/dsh-llm/brand'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -53,6 +53,12 @@ export interface TeamMemberSnapshot {
   readonly context: 'fresh' | 'fork'
   readonly phase: TeamMemberPhase
   readonly error?: string
+  /** LLM provider of the creation-time {@link TeammateRoute}; absent when the teammate inherited the Lead route. */
+  readonly llmProvider?: string
+  /** LLM model of the creation-time route; present exactly when {@link llmProvider} is present. */
+  readonly llmModel?: string
+  /** Reasoning effort of the creation-time route, when the route named one. */
+  readonly llmReasoningEffort?: ReasoningEffortId
 }
 
 /** Current runtime-enriched roster row. */
@@ -64,7 +70,12 @@ export interface TeamMemberView {
   readonly description?: string
   readonly provider?: string
   readonly context?: 'fresh' | 'fork'
+  /** LLM model of the live Agent, else the recorded teammate route, else the Lead's model. */
   readonly model?: string
+  /** LLM provider resolved in the same order as {@link model}; {@link provider} is the subagent provider. */
+  readonly llmProvider?: string
+  /** Reasoning effort of the live Agent or the recorded teammate route, when either names one. */
+  readonly reasoningEffort?: ReasoningEffortId
   readonly diagnostics: string[]
 }
 
@@ -105,6 +116,12 @@ export interface TeamMemberProjection {
   /** Durable lifecycle; the Lead row is always `active`. Turn activity comes from Session status. */
   readonly phase: TeamMemberPhase
   readonly error?: string
+  /** Recorded teammate route provider; see {@link TeamMemberSnapshot.llmProvider}. */
+  readonly llmProvider?: string
+  /** Recorded teammate route model; see {@link TeamMemberSnapshot.llmModel}. */
+  readonly llmModel?: string
+  /** Recorded teammate route reasoning effort; see {@link TeamMemberSnapshot.llmReasoningEffort}. */
+  readonly llmReasoningEffort?: ReasoningEffortId
 }
 
 /**
@@ -161,13 +178,27 @@ export interface Config {
   readonly disposalTimeoutMs?: number
 }
 
+/**
+ * LLM route for one teammate. Provider and model are both required; the
+ * service forwards the route whole as the child `agentOptions` and records it
+ * in the durable member snapshot.
+ */
+export interface TeammateRoute {
+  readonly provider: string
+  readonly model: string
+  readonly reasoningEffort?: ReasoningEffortId
+}
+
 /** Input for creating one durable teammate. */
 export interface SpawnTeammateRequest {
   readonly name: string
   readonly description: string
   readonly prompt: ContentBlock[]
   readonly context: 'fresh' | 'fork'
+  /** Subagent provider that creates the child, such as `spawn` or `fork`. */
   readonly provider: string
+  /** LLM route for the teammate; omitted, the child inherits the Lead route. */
+  readonly agentOptions?: TeammateRoute
   readonly signal: AbortSignal
 }
 
@@ -226,8 +257,11 @@ export interface TeamWaitResult {
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
-    /** Whole teammate lifecycle value, stored only in the Team Lead Session. */
-    'team/member': { version: 2; teamId: TeamId; member: TeamMemberSnapshot }
+    /**
+     * Whole teammate lifecycle value, stored only in the Team Lead Session.
+     * Version 3 records carry a teammate route; version 2 records never do.
+     */
+    'team/member': { version: 2 | 3; teamId: TeamId; member: TeamMemberSnapshot }
     /** Whole shared-task value, stored only in the Team Lead Session. */
     'team/task': { version: 2; teamId: TeamId; task: TeamTaskSnapshot }
     /** Historical mailbox enqueue; new sends use the target Agent inbox. */

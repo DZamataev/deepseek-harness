@@ -4,8 +4,8 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { MessageId } from '@deepseek-ai/dsh-llm'
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import { ReasoningEffortId, type MessageId } from '@deepseek-ai/dsh-llm'
+import type { SessionEventMap, SessionId } from '@deepseek-ai/dsh-session'
 import { foldSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import { errorMessage, TeamError } from './error.ts'
 import type { TeamJournal } from './journal.ts'
@@ -17,6 +17,7 @@ import { TeamId } from './types.ts'
 import type {
   SpawnTeammateRequest,
   SpawnTeammateResult,
+  TeammateRoute,
   TeamMemberSnapshot,
   TeamMemberView,
 } from './types.ts'
@@ -132,11 +133,12 @@ export class TeamRoster {
       role: 'lead',
       status: availability(root),
       ...root.options.model === undefined ? {} : { model: root.options.model },
+      ...root.options.provider === undefined ? {} : { llmProvider: root.options.provider },
+      ...root.options.reasoningEffort === undefined ? {} : { reasoningEffort: root.options.reasoningEffort },
       diagnostics: [],
     }]
     for (const member of state.members) {
       const live = this.ctx.agents.get(member.id)
-      const model = live?.options.model ?? root.options.model
       result.push({
         id: member.id,
         name: member.name,
@@ -149,7 +151,7 @@ export class TeamRoster {
         description: member.description,
         provider: member.provider,
         context: member.context,
-        ...model === undefined ? {} : { model },
+        ...teammateRoute(member, live, root),
         diagnostics: member.error === undefined ? [] : [member.error],
       })
     }
@@ -159,7 +161,7 @@ export class TeamRoster {
   /**
    * Create one named, continuable direct child of the Team Lead.
    * @param caller - exact live Lead Agent.
-   * @param request - immutable name, description, prompt, context mode, provider, and cancellation.
+   * @param request - immutable name, description, prompt, context mode, provider, optional LLM route, and cancellation.
    * @returns the active roster row.
    */
   async spawn(caller: Agent, request: SpawnTeammateRequest): Promise<SpawnTeammateResult> {
@@ -240,6 +242,7 @@ export class TeamRoster {
     const name = this.memberName(request.name)
     const description = requiredText(request.description, 'description', 200)
     const childId = brandString<SessionId>(randomUUID())
+    const route = request.agentOptions === undefined ? undefined : normalizedRoute(request.agentOptions)
     const member: TeamMemberSnapshot = {
       id: childId,
       name,
@@ -247,6 +250,11 @@ export class TeamRoster {
       provider: requiredText(request.provider, 'provider', 200),
       context: request.context,
       phase: 'provisioning',
+      ...route === undefined ? {} : {
+        llmProvider: route.provider,
+        llmModel: route.model,
+        ...route.reasoningEffort === undefined ? {} : { llmReasoningEffort: route.reasoningEffort },
+      },
     }
 
     await this.journal.transact(root.id, async () => {
@@ -257,7 +265,7 @@ export class TeamRoster {
       if (state.members.length >= this.maxMembers) {
         throw new TeamError(`Team member limit ${this.maxMembers} reached`, 'TEAM_MEMBER_LIMIT')
       }
-      await this.journal.appendAndFlush(root, 'team/member', { version: 2, teamId: TeamId(root.id), member })
+      await this.journal.appendAndFlush(root, 'team/member', memberRecord(root, member))
     })
 
     try {
@@ -269,6 +277,7 @@ export class TeamRoster {
         request: {
           prompt: request.prompt,
           parent: root,
+          ...route === undefined ? {} : { agentOptions: route },
         },
         signal,
       })
@@ -316,7 +325,7 @@ export class TeamRoster {
       }
       throw conflict
     }
-    return { member: this.memberView(active) }
+    return { member: this.memberView(root, active) }
   }
 
   /** Flush the accepted initial inbox item before the Lead can commit `active`. */
@@ -389,6 +398,10 @@ export class TeamRoster {
         if (loaded.header.parentSession === root.id
           && descriptor?.mode === 'continuable'
           && descriptor.provider === member.provider
+          && (member.llmProvider === undefined || (descriptor.agentProvider === member.llmProvider
+            && descriptor.agentModel === member.llmModel
+            && (member.llmReasoningEffort === undefined
+              || descriptor.agentReasoningEffort === member.llmReasoningEffort)))
           && acceptedInitialPrompt) {
           phase = 'active'
         } else {
@@ -407,17 +420,13 @@ export class TeamRoster {
           phase,
           ...phase === 'failed' ? { error: failure } : {},
         }
-        await this.journal.appendAndFlush(root, 'team/member', {
-          version: 2,
-          teamId: TeamId(root.id),
-          member: settled,
-        })
+        await this.journal.appendAndFlush(root, 'team/member', memberRecord(root, settled))
       })
     }
   }
 
   /** Build one runtime member row after successful creation. */
-  private memberView(member: TeamMemberSnapshot & { readonly phase: 'active' }): TeamMemberView {
+  private memberView(root: Agent, member: TeamMemberSnapshot & { readonly phase: 'active' }): TeamMemberView {
     const live = this.ctx.agents.get(member.id)
     return {
       id: member.id,
@@ -427,7 +436,7 @@ export class TeamRoster {
       description: member.description,
       provider: member.provider,
       context: member.context,
-      ...live?.options.model === undefined ? {} : { model: live.options.model },
+      ...teammateRoute(member, live, root),
       diagnostics: [],
     }
   }
@@ -455,11 +464,7 @@ export class TeamRoster {
         throw new TeamError(`provisioned teammate "${terminal.id}" disappeared`, 'TEAM_PROVISIONING_CONFLICT')
       }
       if (current.phase !== 'provisioning') return current.phase
-      await this.journal.appendAndFlush(root, 'team/member', {
-        version: 2,
-        teamId: TeamId(root.id),
-        member: terminal,
-      })
+      await this.journal.appendAndFlush(root, 'team/member', memberRecord(root, terminal))
       return terminal.phase === 'active' ? 'active' : 'failed'
     })
   }
@@ -468,6 +473,41 @@ export class TeamRoster {
   private subagentDescriptor(agent: Agent): boolean {
     // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     return foldSubagentDescriptor(agent.session.snapshotEvents(agent.session.inheritedEventCount)) !== undefined
+  }
+}
+
+/** Normalize a caller-selected route; provider and model must both be non-empty. */
+function normalizedRoute(route: TeammateRoute): TeammateRoute {
+  return {
+    provider: requiredText(route.provider, 'agentOptions.provider', 200),
+    model: requiredText(route.model, 'agentOptions.model', 200),
+    ...route.reasoningEffort === undefined
+      ? {}
+      : { reasoningEffort: ReasoningEffortId(requiredText(route.reasoningEffort, 'agentOptions.reasoningEffort', 200)) },
+  }
+}
+
+/** Write a routed member as version 3; an unrouted member keeps the version 2 record. */
+function memberRecord(root: Agent, member: TeamMemberSnapshot): SessionEventMap['team/member'] {
+  return { version: member.llmProvider === undefined ? 2 : 3, teamId: TeamId(root.id), member }
+}
+
+/**
+ * Resolve a teammate's LLM route fields: the live Agent's options, else the
+ * recorded route, else the Lead's options for provider and model.
+ */
+function teammateRoute(
+  member: TeamMemberSnapshot,
+  live: Agent | undefined,
+  root: Agent,
+): Pick<TeamMemberView, 'model' | 'llmProvider' | 'reasoningEffort'> {
+  const model = live?.options.model ?? member.llmModel ?? root.options.model
+  const llmProvider = live?.options.provider ?? member.llmProvider ?? root.options.provider
+  const reasoningEffort = live?.options.reasoningEffort ?? member.llmReasoningEffort
+  return {
+    ...model === undefined ? {} : { model },
+    ...llmProvider === undefined ? {} : { llmProvider },
+    ...reasoningEffort === undefined ? {} : { reasoningEffort },
   }
 }
 

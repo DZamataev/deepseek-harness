@@ -59,6 +59,8 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 Ask the Lead to create a teammate: give it a unique lowercase name such as `reviewer` and describe its job. A teammate starts fresh with no memory of the Lead's conversation, or as a fork that inherits the Lead's completed turns; the creation request chooses which. Teammate names are permanent — even a teammate whose creation failed keeps its name, and no name is ever reused.
 
+The creation request can also name an LLM route for the teammate: a provider and a model, plus an optional reasoning effort. Without a route the teammate inherits the Lead's route; a recorded route stays with the teammate across restarts, and the roster reports it even while the teammate is not loaded.
+
 The roster shows every member with its role (`lead` or `teammate`) and current status: `running`, `inactive` (no turn is executing, whether loaded or stored), `provisioning`, or `failed`. A member that is not loaded receives its messages when it wakes.
 
 Only the Lead can create teammates or interrupt them.
@@ -141,11 +143,11 @@ Tasks are complete versioned snapshots; every mutation carries `expectedRevision
 
 ### Durability model
 
-Roster and task mutations append `team/member` and `team/task` to the exact live Lead Session and flush before reporting success or waking waiters. Historical `team/message/queued` and `team/message/delivered` records remain readable; Team writes neither. All four event types are log-only: they never enter the conversation surface, so derived model history is untouched by coordination records. Session event `seq` and `time` own ordering and timing; snapshots do not duplicate them.
+Roster and task mutations append `team/member` and `team/task` to the exact live Lead Session and flush before reporting success or waking waiters. A member with a teammate route is written as `team/member` version 3; other members keep version 2. Historical `team/message/queued` and `team/message/delivered` records remain readable; Team writes neither. All four event types are log-only: they never enter the conversation surface, so derived model history is untouched by coordination records. Session event `seq` and `time` own ordering and timing; snapshots do not duplicate them.
 
 Historical mailbox events and `team-message` sources remain readable, and the projection still reports queued-minus-delivered records. Team never delivers or acknowledges them: a historical message that its target had not recorded stays undelivered.
 
-Mailbox projection and checkpoint admission preserve every decoded JSON field of accepted content outside the locally declared validators, including an own `__proto__` key. Local field checks cover `text`, `reasoning`, `image`, and `tool-call`; accepted unknown tags remain opaque. Team projection cache version 4 rebuilds checkpoints from earlier cache versions from the Session log; the Session format version is unchanged.
+Mailbox projection and checkpoint admission preserve every decoded JSON field of accepted content outside the locally declared validators, including an own `__proto__` key. Local field checks cover `text`, `reasoning`, `image`, and `tool-call`; accepted unknown tags remain opaque. Team projection cache version 5 rebuilds checkpoints from earlier cache versions from the Session log; the Session format version is unchanged.
 
 ### Disposal
 

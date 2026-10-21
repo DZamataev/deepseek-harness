@@ -59,6 +59,8 @@ kind: "package-reference"
 
 请 Lead 创建 teammate：给它一个唯一的小写名字（例如 `reviewer`）并描述其职责。teammate 可以 fresh 启动（不携带 Lead 对话的任何记忆），也可以作为 fork 启动（继承 Lead 已完成的轮次）；创建请求决定用哪种。teammate 名字是永久的——即使创建失败的 teammate 也保留其名字，任何名字都不会被复用。
 
+创建请求还可以为 teammate 指定 LLM 路由：一个 provider 和一个 model，以及可选的推理强度。未指定路由时 teammate 继承 Lead 的路由；已记录的路由在重启后仍属于该 teammate，即使 teammate 未加载，roster 也会报告它。
+
 roster 显示每个成员的职责（`lead` 或 `teammate`）与当前状态：`running`、`inactive`（当前没有执行轮次，包括已加载和仅存储的成员）、`provisioning` 或 `failed`。未加载的成员会在唤醒后收到其消息。
 
 只有 Lead 可以创建 teammate 或中断它们。
@@ -141,11 +143,11 @@ Lead 可以停止 teammate 的当前轮次，而不会删除其排队的消息�
 
 ### 持久性模型
 
-roster 与任务变更将 `team/member` 和 `team/task` 追加到精确的 live Lead 会话，并在报告成功或唤醒等待者之前 flush。历史 `team/message/queued` 与 `team/message/delivered` 记录仍可读取；Team 不再写入这两种记录。这四种事件仅存在于日志：它们从不进入会话表面，因此派生模型历史不受协作记录影响。顺序与时间由会话事件的 `seq` 与 `time` 负责，快照不重复保存。
+roster 与任务变更将 `team/member` 和 `team/task` 追加到精确的 live Lead 会话，并在报告成功或唤醒等待者之前 flush。带 teammate 路由的成员写为 `team/member` 版本 3；其他成员保持版本 2。历史 `team/message/queued` 与 `team/message/delivered` 记录仍可读取；Team 不再写入这两种记录。这四种事件仅存在于日志：它们从不进入会话表面，因此派生模型历史不受协作记录影响。顺序与时间由会话事件的 `seq` 与 `time` 负责，快照不重复保存。
 
 历史 mailbox 事件与 `team-message` source 仍可读取，投影仍报告 queued-minus-delivered 记录。Team 不会投递或确认这些记录：目标尚未记录的历史消息保持未投递。
 
-Mailbox 投影与 checkpoint 准入保留本地声明的校验器之外获准内容中全部已解码 JSON 字段，包括自有 `__proto__` 键。本地字段检查覆盖 `text`、`reasoning`、`image` 和 `tool-call`；获准的未知标签保持不透明。Team 投影缓存版本 4 从 Session 日志重建较早缓存版本的 checkpoint；Session 格式版本保持不变。
+Mailbox 投影与 checkpoint 准入保留本地声明的校验器之外获准内容中全部已解码 JSON 字段，包括自有 `__proto__` 键。本地字段检查覆盖 `text`、`reasoning`、`image` 和 `tool-call`；获准的未知标签保持不透明。Team 投影缓存版本 5 从 Session 日志重建较早缓存版本的 checkpoint；Session 格式版本保持不变。
 
 ### Dispose
 

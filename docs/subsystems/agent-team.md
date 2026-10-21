@@ -18,10 +18,16 @@ interface TeamMemberSnapshot {
   readonly context: 'fresh' | 'fork'
   readonly phase: TeamMemberPhase
   readonly error?: string
+  /** LLM provider of the creation-time {@link TeammateRoute}; absent when the teammate inherited the Lead route. */
+  readonly llmProvider?: string
+  /** LLM model of the creation-time route; present exactly when {@link llmProvider} is present. */
+  readonly llmModel?: string
+  /** Reasoning effort of the creation-time route, when the route named one. */
+  readonly llmReasoningEffort?: ReasoningEffortId
 }
 ```
 
-Every member starts in `provisioning` and reaches exactly one terminal roster phase, `active` or `failed`. Roster `running`/`inactive` status is derived separately and never rewrites this record.
+Every member starts in `provisioning` and reaches exactly one terminal roster phase, `active` or `failed`. Roster `running`/`inactive` status is derived separately and never rewrites this record. The route fields are immutable; a `team/member` record that carries them uses payload version 3, and a version 2 record never carries them.
 
 ## Messages and historical mailbox
 
@@ -88,6 +94,12 @@ interface TeamMemberProjection {
   /** Durable lifecycle; the Lead row is always `active`. Turn activity comes from Session status. */
   readonly phase: TeamMemberPhase
   readonly error?: string
+  /** Recorded teammate route provider; see {@link TeamMemberSnapshot.llmProvider}. */
+  readonly llmProvider?: string
+  /** Recorded teammate route model; see {@link TeamMemberSnapshot.llmModel}. */
+  readonly llmModel?: string
+  /** Recorded teammate route reasoning effort; see {@link TeamMemberSnapshot.llmReasoningEffort}. */
+  readonly llmReasoningEffort?: ReasoningEffortId
 }
 ```
 
@@ -156,7 +168,7 @@ listMembers(agent: Agent): TeamMemberView[]
 /**
  * Create one named, continuable direct child of the Team Lead.
  * @param caller - exact live Lead Agent.
- * @param request - immutable name, description, prompt, context mode, provider, and cancellation.
+ * @param request - immutable name, description, prompt, context mode, provider, optional LLM route, and cancellation.
  * @returns the active roster row.
  */
 async spawnTeammate(caller: Agent, request: SpawnTeammateRequest): Promise<SpawnTeammateResult>

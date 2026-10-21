@@ -18,10 +18,16 @@ interface TeamMemberSnapshot {
   readonly context: 'fresh' | 'fork'
   readonly phase: TeamMemberPhase
   readonly error?: string
+  /** LLM provider of the creation-time {@link TeammateRoute}; absent when the teammate inherited the Lead route. */
+  readonly llmProvider?: string
+  /** LLM model of the creation-time route; present exactly when {@link llmProvider} is present. */
+  readonly llmModel?: string
+  /** Reasoning effort of the creation-time route, when the route named one. */
+  readonly llmReasoningEffort?: ReasoningEffortId
 }
 ```
 
-每个 member 都从 `provisioning` 开始，并且只到达一个终态 roster phase：`active` 或 `failed`。roster 的 `running`／`inactive` 状态单独派生，绝不会重写该记录。
+每个 member 都从 `provisioning` 开始，并且只到达一个终态 roster phase：`active` 或 `failed`。roster 的 `running`／`inactive` 状态单独派生，绝不会重写该记录。路由字段不可变；携带它们的 `team/member` 记录使用 payload 版本 3，版本 2 记录从不携带它们。
 
 ## 消息与历史 mailbox
 
@@ -88,6 +94,12 @@ interface TeamMemberProjection {
   /** Durable lifecycle; the Lead row is always `active`. Turn activity comes from Session status. */
   readonly phase: TeamMemberPhase
   readonly error?: string
+  /** Recorded teammate route provider; see {@link TeamMemberSnapshot.llmProvider}. */
+  readonly llmProvider?: string
+  /** Recorded teammate route model; see {@link TeamMemberSnapshot.llmModel}. */
+  readonly llmModel?: string
+  /** Recorded teammate route reasoning effort; see {@link TeamMemberSnapshot.llmReasoningEffort}. */
+  readonly llmReasoningEffort?: ReasoningEffortId
 }
 ```
 
@@ -156,7 +168,7 @@ listMembers(agent: Agent): TeamMemberView[]
 /**
  * Create one named, continuable direct child of the Team Lead.
  * @param caller - exact live Lead Agent.
- * @param request - immutable name, description, prompt, context mode, provider, and cancellation.
+ * @param request - immutable name, description, prompt, context mode, provider, optional LLM route, and cancellation.
  * @returns the active roster row.
  */
 async spawnTeammate(caller: Agent, request: SpawnTeammateRequest): Promise<SpawnTeammateResult>

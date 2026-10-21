@@ -7,7 +7,7 @@ import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SubagentService, { snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
@@ -134,6 +134,7 @@ async function persistedChild(
   rootId: SessionId,
   childId: SessionId,
   message: ReturnType<typeof createUserMessage>,
+  agentReasoningEffort?: ReasoningEffortId,
 ) {
   const descriptor = snapshotSubagentDescriptor({
     mode: 'continuable',
@@ -141,6 +142,7 @@ async function persistedChild(
     label: 'persisted child fixture',
     agentProvider: 'mock',
     agentModel: 'mock',
+    ...agentReasoningEffort === undefined ? {} : { agentReasoningEffort },
   })
   const child = ctx.sessions.create(childId, {
     meta: { parentSession: rootId, origin: 'subagent' },
@@ -307,6 +309,121 @@ for (const backend of backends) {
       const stored = await storedEvents(second.ctx, childId)
       expect(stored.some(event => event.type === 'agent/inbox/spliced'
         && event.data.inserted.some(message => message.id === initial.id))).toBe(true)
+
+      await rootHandle.dispose()
+      await second.dispose()
+    })
+
+    it('lists a routed inactive teammate after restart and cold-resumes it on its route', {
+      timeout: PERSISTENCE_TEST_TIMEOUT_MS,
+    }, async () => {
+      const storageRoot = mkdtempSync(join(tmpdir(), `dsh-team-route-${backend.name.toLowerCase()}-`))
+      roots.push(storageRoot)
+      const rootId = SessionId(`${backend.name.toLowerCase()}-route-root`)
+      const route = { provider: 'routed', model: 'routed-model' }
+
+      // The Lead adapter answers the parent-delivered completion notice.
+      const first = await stack(backend, storageRoot, [textResponse('lead notice answer')])
+      const firstRouted = new MockAdapter([textResponse('routed initial answer')])
+      first.ctx.llm.registerAdapter(['routed'], firstRouted)
+      const firstLead = await first.ctx.agentLoop.create(rootId, { provider: 'mock', model: 'mock' })
+      const started = await first.ctx.agentTeams.spawnTeammate(firstLead, {
+        name: 'routed-worker',
+        description: 'routed restart target',
+        prompt: [{ type: 'text', text: 'routed before restart' }],
+        context: 'fresh',
+        provider: 'spawn',
+        agentOptions: route,
+        signal: SIGNAL,
+      })
+      await vi.waitFor(() => { expect(first.ctx.agents.get(started.member.id)).toBeUndefined() }, { timeout: 5_000 })
+      expect(firstRouted.requests).toHaveLength(1)
+      await first.ctx.sessions.flush(firstLead.session)
+      await first.dispose()
+
+      const second = await stack(backend, storageRoot, [textResponse('lead second notice answer')])
+      const secondRouted = new MockAdapter([textResponse('routed resumed answer')])
+      second.ctx.llm.registerAdapter(['routed'], secondRouted)
+      const rootHandle = await second.ctx.agents.resume({
+        resumeSessionId: rootId,
+        agentOptions: { provider: 'mock', model: 'mock' },
+      })
+      expect(second.ctx.agents.get(started.member.id)).toBeUndefined()
+      const row = second.ctx.agentTeams.listMembers(rootHandle.agent)[1]
+      expect(row).toMatchObject({
+        name: 'routed-worker',
+        status: 'inactive',
+        provider: 'spawn',
+        llmProvider: 'routed',
+        model: 'routed-model',
+      })
+      expect(row).not.toHaveProperty('reasoningEffort')
+      expect(durable(rootHandle.agent).members[0]).not.toHaveProperty('llmReasoningEffort')
+
+      await second.ctx.agentTeams.sendMessage(rootHandle.agent, {
+        target: 'routed-worker',
+        content: [{ type: 'text', text: 'resume on the recorded route' }],
+        signal: SIGNAL,
+      })
+      await vi.waitFor(() => { expect(secondRouted.requests).toHaveLength(1) }, { timeout: 5_000 })
+      expect(secondRouted.requests[0]).toMatchObject({ provider: 'routed', model: 'routed-model' })
+      await vi.waitFor(() => { expect(second.ctx.agents.get(started.member.id)).toBeUndefined() }, { timeout: 5_000 })
+
+      await rootHandle.dispose()
+      await second.dispose()
+    })
+
+    it('reconciles a routed provisioning child only when its descriptor carries the recorded route', {
+      timeout: PERSISTENCE_TEST_TIMEOUT_MS,
+    }, async () => {
+      const storageRoot = mkdtempSync(join(tmpdir(), `dsh-team-route-recovery-${backend.name.toLowerCase()}-`))
+      roots.push(storageRoot)
+      const rootId = SessionId(`${backend.name.toLowerCase()}-route-recovery-root`)
+      const high = ReasoningEffortId('high')
+      const cases = [
+        { name: 'route-match', route: { llmProvider: 'mock', llmModel: 'mock' }, phase: 'active' },
+        { name: 'effort-match', route: { llmProvider: 'mock', llmModel: 'mock', llmReasoningEffort: high }, effort: high, phase: 'active' },
+        { name: 'provider-mismatch', route: { llmProvider: 'other', llmModel: 'mock' }, phase: 'failed' },
+        { name: 'model-mismatch', route: { llmProvider: 'mock', llmModel: 'other' }, phase: 'failed' },
+        { name: 'effort-mismatch', route: { llmProvider: 'mock', llmModel: 'mock', llmReasoningEffort: high }, phase: 'failed' },
+      ] as const
+      const first = await stack(backend, storageRoot, [])
+      const root = await first.ctx.agentLoop.create(rootId, { provider: 'mock', model: 'mock' })
+      await Promise.resolve()
+      await Promise.resolve()
+      for (const entry of cases) {
+        const childId = SessionId(`${backend.name.toLowerCase()}-${entry.name}`)
+        root.session.append('team/member', {
+          version: 3,
+          teamId: TeamId(root.id),
+          member: { ...provisioning(childId, entry.name), ...entry.route },
+        })
+        const initial = createUserMessage({
+          content: [{ type: 'text', text: `${entry.name} initial task` }],
+          source: { kind: 'user' },
+        })
+        await persistedChild(first.ctx, rootId, childId, initial, 'effort' in entry ? entry.effort : undefined)
+      }
+      await first.ctx.sessions.flush(root.session)
+      await first.dispose()
+
+      const second = await stack(backend, storageRoot, [])
+      const rootHandle = await second.ctx.agents.resume({
+        resumeSessionId: rootId,
+        agentOptions: { provider: 'mock', model: 'mock' },
+      })
+      await vi.waitFor(() => {
+        expect(durable(rootHandle.agent).members.map(member => [member.name, member.phase]))
+          .toEqual(cases.map(entry => [entry.name, entry.phase]))
+      })
+      for (const [index, member] of durable(rootHandle.agent).members.entries()) {
+        expect(member).toMatchObject(cases[index]!.route)
+        if (member.phase === 'failed') expect(member.error).toContain('does not match the provisioned continuation')
+      }
+      expect(rootHandle.agent.session.snapshotEvents()
+        .flatMap(event => event.type === 'team/member' ? [event.data.version] : []))
+        .toEqual(Array.from({ length: cases.length * 2 }, () => 3))
+      expect(second.adapter.requests).toEqual([])
 
       await rootHandle.dispose()
       await second.dispose()

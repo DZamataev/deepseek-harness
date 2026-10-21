@@ -64,9 +64,9 @@ const MEMBER_VIEW_SCHEMA = {
   },
 } as const
 
-/** Expose the member name as its model-facing target. */
+/** Expose the member name as its model-facing target; LLM route fields stay out of the model-facing row. */
 function modelMember(member: TeamMemberView): InferValue<typeof MEMBER_VIEW_SCHEMA> {
-  const { id: _id, name, ...details } = member
+  const { id: _id, name, llmProvider: _llmProvider, reasoningEffort: _reasoningEffort, ...details } = member
   return { target: name, ...details }
 }
 
