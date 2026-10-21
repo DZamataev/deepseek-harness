@@ -78,7 +78,10 @@ type TeamMemberRowProps = Pick<TeamActionProps,
 function TeamMemberRow({
   member, memberCount, sessionId, useSessions, useSessionStatus, openTeammate, onError, t,
 }: TeamMemberRowProps) {
+  // A teammate Session the client has not opened has no model-selection projection; the
+  // roster row's recorded route names its model until then.
   const model = useSessions(state => state.projectionsBySession[member.id]?.values.modelSelection?.next?.model)
+    ?? member.llmModel
   const running = useSessionStatus(state => state.get(member.id)?.running)
   const summaryRunning = useSessions(state => state.byId[member.id]?.running)
   const status: MemberStatus = member.phase === 'active'
