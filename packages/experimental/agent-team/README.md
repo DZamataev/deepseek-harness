@@ -59,7 +59,7 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 Ask the Lead to create a teammate: give it a unique lowercase name such as `reviewer` and describe its job. A teammate starts fresh with no memory of the Lead's conversation, or as a fork that inherits the Lead's completed turns; the creation request chooses which. Teammate names are permanent — even a teammate whose creation failed keeps its name, and no name is ever reused.
 
-The creation request can also name an LLM route for the teammate: a provider and a model, plus an optional reasoning effort. Without a route the teammate inherits the Lead's route; a recorded route stays with the teammate across restarts, and the roster reports it even while the teammate is not loaded.
+The creation request can also name an LLM route for the teammate: a provider and a model, plus an optional reasoning effort. Without a route the teammate inherits the Lead's route; a recorded route stays with the teammate across restarts, and the roster reports it even while the teammate is not loaded. For the Lead and each loaded teammate, the roster reports the route of the member's last logged request, which reflects a model chosen in the GUI picker; before a first request it reports the Agent options. An effort the adapter defaulted is not reported.
 
 The roster shows every member with its role (`lead` or `teammate`) and current status: `running`, `inactive` (no turn is executing, whether loaded or stored), `provisioning`, or `failed`. A member that is not loaded receives its messages when it wakes.
 
