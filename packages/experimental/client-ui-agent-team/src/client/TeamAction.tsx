@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   TeamMemberProjection,
+  TeamProjection,
   TeamTaskView as TeamTask,
 } from '@deepseek-ai/dsh-experimental-agent-team/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
@@ -178,10 +179,33 @@ function TaskCard({ task, t }: { task: TeamTask; t: TranslateNS<typeof NS> }) {
   )
 }
 
+/**
+ * Whether a Team view has anything beyond the implicit Lead: a teammate, a task, or a
+ * persisted-record failure. Every root Session projects a lone Lead row, so that row alone
+ * does not make a Team.
+ * @param team - the Lead Session's `agentTeam` projection view.
+ * @returns true when the header should offer the Team panel.
+ */
+export function teamExists(team: TeamProjection): boolean {
+  return team.members.some(member => member.role !== 'lead') || team.tasks.length > 0 || team.failure !== undefined
+}
+
+/**
+ * Render the Team action for a conversation whose Lead Session has a Team, otherwise nothing.
+ * @param props - composed slot props.
+ * @returns the Team trigger and panel, or null without a Team.
+ */
+export function TeamAction(props: TeamActionProps) {
+  const leadSessionId = props.useSession(snapshot => snapshot.subagent?.address.parentSessionId) ?? props.sessionId
+  const team = props.useSessions(state => state.projectionsBySession[leadSessionId]?.values.agentTeam)
+  if (team === undefined || !teamExists(team)) return null
+  return <TeamPanelAction {...props} team={team} />
+}
+
 /** Render the Team roster and read-only task board. */
-export function TeamAction({
-  sessionId, useSession, useSessions, useSessionStatus, openTeammate, t,
-}: TeamActionProps) {
+function TeamPanelAction({
+  sessionId, useSessions, useSessionStatus, openTeammate, t, team,
+}: TeamActionProps & { team: TeamProjection }) {
   const [open, setOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -192,10 +216,6 @@ export function TeamAction({
     open, anchorRef: triggerRef, panelRef, gap: 5, margin: 16,
   })
   const positioned = position !== null
-  const leadSessionId = useSession(snapshot => snapshot.subagent?.address.parentSessionId) ?? sessionId
-  const team = useSessions(state => state.projectionsBySession[leadSessionId]?.values.agentTeam)
-  const opening = useSession(snapshot => snapshot.openState === 'loading')
-  const listing = useSessions(state => state.phase === 'pending')
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const pinnedRef = useRef(false)
 
@@ -263,7 +283,7 @@ export function TeamAction({
     return () => { document.removeEventListener('keydown', dismiss) }
   }, [open])
 
-  const compact = team !== undefined && team.members.length === 1 && team.tasks.length === 0
+  const compact = team.members.length === 1 && team.tasks.length === 0
 
   return (
     <div
@@ -306,52 +326,42 @@ export function TeamAction({
             {error !== null && (
               <div className={css.error} role="alert"><StateDot state="error" />{error}</div>
             )}
-            {team === undefined && (
-              <div className={css.notice} role="status">
-                <StateDot state={opening || listing ? 'ongoing' : 'warning'} />
-                {t(opening || listing ? 'loading' : 'unavailable')}
+            {team.failure !== undefined && (
+              <div className={css.error} role="alert"><StateDot state="error" />{t('failure', { message: team.failure })}</div>
+            )}
+            <section>
+              <h3>
+                {t('roster')}
+                {team.members.length > 1 && <span className={css.count}>{team.members.length}</span>}
+              </h3>
+              <div className={css.roster}>
+                {team.members.map(member => (
+                  <TeamMemberRow
+                    key={member.id}
+                    member={member}
+                    memberCount={team.members.length}
+                    sessionId={sessionId}
+                    useSessions={useSessions}
+                    useSessionStatus={useSessionStatus}
+                    openTeammate={openTeammate}
+                    onError={setError}
+                    t={t}
+                  />
+                ))}
               </div>
-            )}
-            {team !== undefined && (
-              <>
-                {team.failure !== undefined && (
-                  <div className={css.error} role="alert"><StateDot state="error" />{t('failure', { message: team.failure })}</div>
+            </section>
+            <section>
+              {team.tasks.length === 0
+                ? <p className={css.emptyNotice}>{t('empty')}</p>
+                : (
+                  <>
+                    <h3>{t('tasks')}<span className={css.count}>{team.tasks.length}</span></h3>
+                    <div className={css.tasks}>
+                      {team.tasks.map(task => <TaskCard key={task.id} task={task} t={t} />)}
+                    </div>
+                  </>
                 )}
-                <section>
-                  <h3>
-                    {t('roster')}
-                    {team.members.length > 1 && <span className={css.count}>{team.members.length}</span>}
-                  </h3>
-                  <div className={css.roster}>
-                    {team.members.map(member => (
-                      <TeamMemberRow
-                        key={member.id}
-                        member={member}
-                        memberCount={team.members.length}
-                        sessionId={sessionId}
-                        useSessions={useSessions}
-                        useSessionStatus={useSessionStatus}
-                        openTeammate={openTeammate}
-                        onError={setError}
-                        t={t}
-                      />
-                    ))}
-                  </div>
-                </section>
-                <section>
-                  {team.tasks.length === 0
-                    ? <p className={css.emptyNotice}>{t('empty')}</p>
-                    : (
-                      <>
-                        <h3>{t('tasks')}<span className={css.count}>{team.tasks.length}</span></h3>
-                        <div className={css.tasks}>
-                          {team.tasks.map(task => <TaskCard key={task.id} task={task} t={t} />)}
-                        </div>
-                      </>
-                    )}
-                </section>
-              </>
-            )}
+            </section>
           </div>
         </div>,
         document.body,

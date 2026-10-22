@@ -9,6 +9,7 @@ import type { Browser, Locator, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { FiberState } from '@deepseek-ai/cordis'
 import { ON_DEMAND_BUNDLES, OPTIONAL_BUNDLES } from '@deepseek-ai/dsh-app-boot'
+import type {} from '@deepseek-ai/dsh-experimental-agent-team'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed, onTestFinished, vi } from 'vitest'
 import { join } from 'node:path'
@@ -804,8 +805,11 @@ describe('web e2e: plugin manager', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-team'))
     const panel = await openPluginsPanel()
     const toggle = panel.getByRole('switch', { name: '启用 智能体团队', exact: true })
+    // A Web profile mounts the Team tools through the `team` preset, not at the Host.
     const teamRows = () => [...scaffold.ctx.loader.entries()]
-      .filter(entry => ['agent-team', 'tool-agent-team', 'ui-agent-team'].includes(entry.options.id))
+      .filter(entry => ['agent-team', 'preset-team', 'ui-agent-team'].includes(entry.options.id))
+    const hostTeamTools = () => [...scaffold.ctx.loader.entries()]
+      .filter(entry => entry.options.id === 'tool-agent-team' && entry.fiber?.state === FiberState.ACTIVE)
     const teamPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     const teamTripwire = watchConsole(teamPage)
     try {
@@ -828,14 +832,17 @@ describe('web e2e: plugin manager', () => {
       await toggle.click()
       try {
         await expect.poll(() => teamRows().filter(entry => entry.fiber?.state === FiberState.ACTIVE).length, { timeout: 20_000 }).toBe(3)
+        expect(hostTeamTools()).toEqual([])
         await expect.poll(() => toggle.getAttribute('aria-checked'), { timeout: PLUGIN_TOGGLE_SETTLE_MS }).toBe('true')
-        await action.waitFor({ timeout: 20_000 })
-        await action.getByRole('button', { name: '智能体团队', exact: true }).click()
-        const teamPanel = teamPage.getByRole('dialog', { name: '智能体团队', exact: true })
-        await teamPanel.getByText('Team 暂不可用', { exact: true }).waitFor()
+        // A Lead without teammates or tasks has no Team, so the header offers no action.
+        expect(await action.count()).toBe(0)
+        await scaffold.ctx.agentTeams.createTask(agent, {
+          subject: 'Lifecycle task', description: 'Makes the Team visible', writeScopes: [],
+        })
         await teamPage.reload({ waitUntil: 'load' })
         await action.getByRole('button', { name: '智能体团队', exact: true }).click()
-        await teamPanel.getByText('暂无共享任务，可以通过对话创建').waitFor()
+        const teamPanel = teamPage.getByRole('dialog', { name: '智能体团队', exact: true })
+        await teamPanel.getByText('Lifecycle task', { exact: true }).waitFor()
         await teamPanel.getByText('lead', { exact: true }).waitFor()
         const manifest = JSON.parse(await homeFile('profiles', 'scaffold', 'package.json')) as {
           dsh: { profile: { bundles: string[] } }

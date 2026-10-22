@@ -27,6 +27,8 @@ kind: "package-reference"
 
 当模型应该通过工具运行一支团队时，在 `@deepseek-ai/dsh-experimental-agent-team` 之上挂载本包。挂载后，每个团队成员——Lead 与每个 teammate——都会获得相同的九个工具，以及相同的协作策略。`spawn_teammate` 原样发送初始任务；每个成员通过必需的 runtime context 接收当前角色和名字。
 
+挂载在 Host 时，插件服务每个会话。挂载在 Agent Preset 的 `plugins` 中时，它只服务由该 preset 组合的会话（包括其 teammate），并跟随空白会话切入或切出该 preset；两种情况下 `@deepseek-ai/dsh-experimental-agent-team` 都留在 Host。
+
 ### 何时选择
 
 当模型应该自行创建与协调 teammate、而不是由人来操作 subagent 控件时，选择它。当同名的旧全局 subagent 工具必须继续可用时，请不要选择：团队工具会为团队成员取代它们，因此想同时使用两者的组合必须禁用旧定义。
@@ -131,7 +133,7 @@ member scope 上的一个 `team:policy` 段落说明共享的协作规则；固�
 
 ### 按作用域注册与拆除
 
-`maybeInstall` 对每个 live Agent 运行，并订阅 `agent/created`；它跳过没有 Team 成员关系的 Agent。Agent 的 dispose（资源释放）会运行已安装的 disposer，插件 HMR（热模块替换）会在重新安装前对每个已安装的 scope 执行 dispose。每个 disposer 按逆序撤销注册，因此失败的安装不会留下残缺 scope。
+`maybeInstall` 对每个 live Agent 运行，并订阅 `agent/created`；它跳过没有 Team 成员关系的 Agent，在 Agent Preset 挂载中还跳过 scope 链不含该 preset 修订版本的 Agent，因此其他修订版本的实例保留各自的 Agent。preset 挂载还会在 `tools/change` 之后于一个 microtask 中协调所有 Agent：为空白会话选择移入该修订版本的 Agent 安装，从移出的 Agent 移除，并记录（而不是抛出）安装失败。Agent 的 dispose（资源释放）会运行已安装的 disposer，插件 HMR（热模块替换）会在重新安装前对每个已安装的 scope 执行 dispose。每个 disposer 按逆序撤销注册，因此失败的安装不会留下残缺 scope。
 
 </details>
 

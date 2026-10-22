@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 检查并导航 roster
 
-面板从共享 Session store 展示 Lead Session 的 roster 与任务板。面板保持打开时，任务和成员更新会直接出现。打开面板不发起投影请求。会话或 Session 列表正在加载时，面板显示加载提示；加载结束后仍无 Team 值时，显示不可用提示。
+面板从共享 Session store 展示 Lead Session 的 roster 与任务板。面板保持打开时，任务和成员更新会直接出现。打开面板不发起投影请求。只有当 Lead Session 的 Team 包含 teammate、任务或被拒绝的持久记录时，会话标题栏才显示该操作。每个根 Session 都会投影一条单独的 Lead 行，因此没有 Team 活动或 Team 投影尚未加载的会话不显示该操作。
 
 Roster 行展示持久名称与阶段。provisioning 和 running 成员使用共享 ongoing loading，inactive 成员使用人物图标，failed 成员使用 error 红点。实时 Session 状态提供运行活动；共享 `modelSelection` 投影在可用时提供模型。当前会话带有“当前会话”标签且不可选择。在 teammate 会话中选择 Lead 会直接打开 Lead Session。选择 active teammate 会打开其普通 continuable 子会话地址。Host 在打开历史时校验 parent、child 与 mode；后续人类提示词使用同一 addressed-subagent 会话。
 
@@ -37,7 +37,7 @@ Roster 行展示持久名称与阶段。provisioning 和 running 成员使用共
 
 可开始的 pending 任务使用 idle 灰点，被依赖阻塞的 pending 任务使用 warning 橙点，in-progress 任务使用 ongoing loading，completed 任务使用 done 绿点。
 
-只读任务板展示任务标识、负责人、依赖、就绪状态、提示性写入范围与重叠警告。超过两行的描述提供展开按钮。分区标题显示成员与任务数量；空任务板显示简短描述，只有一名成员且无任务时采用单列面板。Team agent 通过工具创建和更新任务；面板不提供任务修改控件。当投影报告某条持久 Team 记录被拒绝时，面板在最后有效的 roster 与任务上方显示该失败。
+只读任务板展示任务标识、负责人、依赖、就绪状态、提示性写入范围与重叠警告。超过两行的描述提供展开按钮。分区标题显示成员与任务数量；空任务板显示简短描述；只有一名成员且无任务时（仅在显示被拒绝的记录时出现）采用单列面板。Team agent 通过工具创建和更新任务；面板不提供任务修改控件。当投影报告某条持久 Team 记录被拒绝时，面板在最后有效的 roster 与任务上方显示该失败。
 
 -----
 
@@ -87,6 +87,7 @@ Client export 通过 Cordis effect 注册 locale dictionary 与一个 conversati
 
 - **没有 mailbox timeline**——投影视图只承载 roster 与任务；不显示 peer 消息。
 - **晚启用插件** — 在已经打开的会话中启用 Agent Teams 后，需要刷新页面才能接收其 Team 投影。
+- **首个 teammate 或任务出现后才显示操作** — Agent Teams 预设的会话在 Lead 创建 teammate 或任务之前不显示该操作，因为客户端无法得知会话的 Agent 是否带有 Team 工具。
 - **模型可用性** — 仅当共享 store 包含该成员的持久选择或请求时才显示模型。冷缓存中缺少的值会保持缺失，直到正常 Session 加载或实时更新提供它们。
 - **普通 child continuation**——导航后发送的人类消息使用稳定 addressed-subagent 提示词路径，而不是 Team peer mailbox。
 - **没有 lifecycle 或 workspace control**——panel 不能 spawn、rename、delete 或 interrupt teammate，write scope 仍只是提示性 metadata。
