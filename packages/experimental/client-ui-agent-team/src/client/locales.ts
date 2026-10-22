@@ -6,8 +6,6 @@ export const NS = 'agent-team'
 /** Simplified Chinese dictionary and key source. */
 export const zh = {
   trigger: '智能体团队',
-  loading: '正在加载团队…',
-  unavailable: 'Team 暂不可用',
   failure: '团队持久记录无效：{message}',
   empty: '暂无共享任务，可以通过对话创建',
   roster: '成员',
@@ -38,8 +36,6 @@ export type TeamKey = keyof typeof zh
 /** English dictionary checked against the Chinese key set. */
 export const en = {
   trigger: 'Agent Team',
-  loading: 'Loading Team…',
-  unavailable: 'Team is unavailable',
   failure: 'Invalid persisted Team record: {message}',
   empty: 'No shared tasks yet. Create them through the conversation.',
   roster: 'Members',

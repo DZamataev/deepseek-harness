@@ -81,26 +81,28 @@ describe('web e2e: Agent Teams panel', () => {
     await scaffold?.close()
   })
 
-  it('displays agent-owned task changes through a read-only board without a refresh action', async () => {
+  it('shows the action once the Lead has a task and displays agent-owned task changes through a read-only board without a refresh action', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-agent-team-panel'))
     const projectionReads = vi.spyOn(scaffold.ctx.sessionController, 'projections')
     onTestFinished(() => { projectionReads.mockRestore() })
-    await page.locator('[data-team-action]').getByRole('button', { name: /Agent Team/iu }).click()
-    const action = page.getByRole('dialog', { name: 'Agent Team', exact: true })
-    await action.getByText('No shared tasks yet. Create them through the conversation.').waitFor()
-    await action.getByText('lead').waitFor()
-    expect(projectionReads).not.toHaveBeenCalled()
+    // A Lead without teammates or tasks has no Team to show.
+    const trigger = page.locator('[data-team-action]').getByRole('button', { name: /Agent Team/iu })
+    expect(await page.locator('[data-team-action]').count()).toBe(0)
 
-    expect(await action.getByRole('button', { name: 'New task' }).count()).toBe(0)
-    expect(await action.getByRole('button', { name: /Refresh/u }).count()).toBe(0)
-
-    // Host-side Team mutations reach the open panel through projection frames only.
+    // Host-side Team mutations reach the header and the open panel through projection frames only.
     const agent = scaffold.ctx.agents.list()[0]!
     const task = await scaffold.ctx.agentTeams.createTask(agent, {
       subject: 'Agent task', description: 'Created by the Team Lead', writeScopes: ['src/web'],
     })
+    await trigger.click()
+    const action = page.getByRole('dialog', { name: 'Agent Team', exact: true })
     await action.getByText('Agent task', { exact: true }).waitFor()
     await action.getByText('Owner: Unowned', { exact: true }).waitFor()
+    await action.getByText('lead', { exact: true }).waitFor()
+    expect(projectionReads).not.toHaveBeenCalled()
+
+    expect(await action.getByRole('button', { name: 'New task' }).count()).toBe(0)
+    expect(await action.getByRole('button', { name: /Refresh/u }).count()).toBe(0)
     await scaffold.ctx.agentTeams.updateTask(agent, {
       taskId: task.id, expectedRevision: task.revision, action: 'claim',
     })

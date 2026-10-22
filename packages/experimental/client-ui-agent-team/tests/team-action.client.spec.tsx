@@ -12,7 +12,7 @@ import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/c
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import { TeamAction, type TeamActionInjected, type TeamActionProps } from '../src/client/TeamAction.tsx'
+import { TeamAction, teamExists, type TeamActionInjected, type TeamActionProps } from '../src/client/TeamAction.tsx'
 import { zh } from '../src/client/locales.ts'
 
 afterEach(() => {
@@ -105,6 +105,10 @@ function bench(options: {
 
 function openPanel(): void {
   fireEvent.click(screen.getByRole('button', { name: /智能体团队/u }))
+}
+
+function trigger(): HTMLElement | null {
+  return screen.queryByRole('button', { name: /智能体团队/u })
 }
 
 function setProjectionSnapshot(
@@ -201,37 +205,61 @@ describe('TeamAction', () => {
     expect(b.injected.openTeammate).toHaveBeenCalledWith(WORKER, SESSION)
   })
 
-  it.each([false, true])('accepts shared baselines and late capability updates (teammate page: %s)', (addressed) => {
+  it.each<[string, TeamProjection]>([
+    ['a teammate', { members: [lead, worker], tasks: [] }],
+    ['a task', { members: [lead], tasks: [task] }],
+    ['a persisted-record failure', { members: [lead], tasks: [], failure: 'revision is not contiguous' }],
+  ])('offers the Team panel only once the Lead has %s', (_label, value) => {
+    const b = bench({ projections: { [SESSION]: { state: 'ready', error: null, values: { agentTeam: { members: [lead], tasks: [] } } } } })
+    render(<TeamAction {...b.props} />)
+    expect(document.querySelector('[data-team-action]')).toBeNull()
+    expect(teamExists({ members: [lead], tasks: [] })).toBe(false)
+
+    setProjection(b.sessions, SESSION, value)
+    expect(teamExists(value)).toBe(true)
+    openPanel()
+    expect(screen.getByRole('dialog')).toBeTruthy()
+  })
+
+  it('keeps a lone Lead panel to one column when only a failure makes the Team visible', () => {
+    const b = bench({
+      projections: { [SESSION]: { state: 'ready', error: null, values: { agentTeam: { members: [lead], tasks: [], failure: 'bad record' } } } },
+    })
+    render(<TeamAction {...b.props} />)
+    openPanel()
+    expect(screen.getByRole('alert').textContent).toBe('团队持久记录无效：bad record')
+    expect(screen.getByText(zh.empty)).toBeTruthy()
+    expect(screen.getByRole('dialog').className.split(' ')).toHaveLength(2)
+  })
+
+  it.each([false, true])('renders nothing until the Lead projection carries a Team (teammate page: %s)', (addressed) => {
     const b = bench({
       ...(addressed ? { sessionId: WORKER, parentSessionId: SESSION } : {}),
       projections: {}, openState: 'loading',
     })
     render(<TeamAction {...b.props} />)
-    openPanel()
-    expect(screen.getByRole('status').textContent).toBe(zh.loading)
+    expect(trigger()).toBeNull()
     act(() => { b.session.set({ ...b.session.getSnapshot(), openState: 'open' }) })
-    expect(screen.getByRole('status').textContent).toBe(zh.unavailable)
+    expect(trigger()).toBeNull()
     setProjectionSnapshot(b.sessions, SESSION, { state: 'idle', error: null, values: { agentTeam: team } })
+    openPanel()
     expect(screen.getByText('Implement runtime')).toBeTruthy()
-    expect(screen.queryByRole('status')).toBeNull()
     setProjectionSnapshot(b.sessions, SESSION, { state: 'idle', error: null, values: {} })
-    expect(screen.getByRole('status').textContent).toBe(zh.unavailable)
-    setProjection(b.sessions, SESSION, { members: [lead], tasks: [] })
-    expect(screen.getByText(zh.empty)).toBeTruthy()
+    expect(trigger()).toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('waits for the shared Session list and accepts cached projections without an explicit read', () => {
     const b = bench({ projections: {} })
     b.sessions.update((draft) => { draft.phase = 'pending' })
     render(<TeamAction {...b.props} />)
-    openPanel()
-    expect(screen.getByRole('status').textContent).toBe(zh.loading)
+    expect(trigger()).toBeNull()
     act(() => { b.sessions.set({
       ...b.sessions.getSnapshot(), phase: 'ready',
       projectionsBySession: { [SESSION]: { state: 'idle', error: null, values: { agentTeam: team } } },
     }) })
+    openPanel()
     expect(screen.getByText('Implement runtime')).toBeTruthy()
-    expect(screen.queryByRole('status')).toBeNull()
   })
 
   it.each([false, true])('ignores unrelated Session updates (teammate page: %s)', (addressed) => {
@@ -266,12 +294,10 @@ describe('TeamAction', () => {
     expect(screen.getByText('Updated parent task')).toBeTruthy()
   })
 
-  it('shows capability absence after a successful read instead of loading forever', () => {
+  it('renders nothing for a Session whose projection carries no Team value', () => {
     const b = bench({ projections: { [SESSION]: { state: 'ready', error: null, values: {} } } })
     render(<TeamAction {...b.props} />)
-    openPanel()
-    expect(screen.queryByText(zh.loading)).toBeNull()
-    expect(screen.getByRole('status').textContent).toBe('Team 暂不可用')
+    expect(document.querySelector('[data-team-action]')).toBeNull()
   })
 
   it('surfaces a Team projection failure beside the last valid state', () => {
@@ -343,12 +369,16 @@ describe('TeamAction', () => {
     fireEvent.click(screen.getByRole('button', { name: /^worker/u }))
     expect(screen.getByRole('alert')).toBeTruthy()
 
-    const next = bench({ sessionId: 'next-lead' as SessionId, projections: {}, openState: 'loading' })
+    const NEXT = 'next-lead' as SessionId
+    const next = bench({
+      sessionId: NEXT,
+      projections: { [NEXT]: { state: 'ready', error: null, values: { agentTeam: { members: [{ ...lead, id: NEXT }], tasks: [task] } } } },
+    })
     rendered.rerender(<TeamAction {...next.props} />)
     expect(screen.queryByRole('dialog')).toBeNull()
     openPanel()
     expect(screen.queryByRole('alert')).toBeNull()
-    expect(screen.getByRole('status').textContent).toBe(zh.loading)
+    expect(screen.getByText('Implement runtime')).toBeTruthy()
   })
 
   it('keeps panel interactions open and dismisses on outside pointer or Escape', () => {
