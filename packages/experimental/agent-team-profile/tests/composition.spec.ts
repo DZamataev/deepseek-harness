@@ -103,6 +103,12 @@ function withoutRows(rows: readonly EntryOptions[], drop: (entry: EntryOptions) 
       : entry)
 }
 
+/** Every row of an entry list, including rows nested in groups. */
+function descendants(rows: readonly EntryOptions[]): EntryOptions[] {
+  return rows.flatMap(entry =>
+    entry.group && Array.isArray(entry.config) ? [entry, ...descendants(entry.config as EntryOptions[])] : [entry])
+}
+
 describe('Agent Teams bundle in the Web composition', () => {
   const started = [BASE, WEB, TEAM]
   const scope = loaderScope(started)
@@ -143,6 +149,19 @@ describe('Agent Teams bundle in the Web composition', () => {
     expect(teamTools[0]).toEqual({ id: hostTools.id, name: hostTools.name, config: hostTools.config as Record<string, string> })
     expect(withoutRows(team.plugins, entry => entry.name === TEAM_TOOLS))
       .toEqual(withoutRows(standard.plugins, entry => DELEGATION_IDS.has(entry.id)))
+  })
+
+  it('places the Team tool row where standard mounts its delegation group, outside every group', () => {
+    const roster = presets(after)
+    const team = (roster.get('team')!.config as PresetConfig).plugins
+    const standard = (roster.get('standard')!.config as PresetConfig).plugins
+    const position = standard.findIndex(entry => entry.id === 'delegation')
+    expect(position).toBeGreaterThan(0)
+    expect(team.findIndex(entry => entry.name === TEAM_TOOLS)).toBe(position)
+    expect(team[position + 1]?.id).toBe('delegation')
+    const nested = team.filter(entry => entry.group && Array.isArray(entry.config))
+      .flatMap(group => descendants(group.config as EntryOptions[]))
+    expect(nested.filter(entry => entry.name === TEAM_TOOLS)).toEqual([])
   })
 })
 

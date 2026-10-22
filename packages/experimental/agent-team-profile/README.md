@@ -42,7 +42,7 @@ Enable Agent Teams on the Web or Desktop Plugins page. Then choose **Agent Teams
 dsh plugin --profile web add @deepseek-ai/dsh-experimental-agent-team-profile
 ```
 
-In an existing profile’s `package.json`, keep `@deepseek-ai/dsh-experimental-agent-team-profile` in `dsh.profile.bundles` and remove the separate `@deepseek-ai/dsh-experimental-agent-team-web-profile` entry. User patches targeting `ui-agent-team` still apply.
+In an existing profile’s `package.json`, keep `@deepseek-ai/dsh-experimental-agent-team-profile` in `dsh.profile.bundles` and remove the separate `@deepseek-ai/dsh-experimental-agent-team-web-profile` entry. User patches targeting `ui-agent-team` still apply. In a Web or Desktop profile, overriding `disabled` on the Host `tool-agent-team` row is unsupported: the Host then mounts the Team tools again, and every session receives them next to its preset's subagent tools.
 
 ### What you get
 
@@ -107,6 +107,7 @@ The shared system prompt and tool schemas remain prefix-stable while the bundle 
 - **Workflow child tools** — the [Team tool visibility limitation](../tool-agent-team/README.md#known-limitations-and-deferred-work) also applies to workflow children.
 - **Shared checkout** — every teammate observes the same working directory; this bundle adds no worktree isolation or filesystem locking.
 - **Copied preset list** — the `team` preset copies the shipped `standard` plugin list. Edits to `standard` from the Web editor do not reach `team`, and the preset's English name and description are not localized.
+- **Bundle list read at start** — the Host `tool-agent-team` and `preset-team` rows read `profileContext.startedBundles`, the bundle list the profile started with. Adding `@deepseek-ai/dsh-web-app` to or removing it from a running profile changes which of the two rows mounts only after a restart.
 - **Base profile required** — the patch depends on row ids and Subagent providers supplied by `dsh-base`; it is not a standalone profile.
 
 <a id="dev-note"></a>

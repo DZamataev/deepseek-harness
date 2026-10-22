@@ -42,7 +42,7 @@ profile 必须已经包含 `@deepseek-ai/dsh-base`，本层会使用其中的 Su
 dsh plugin --profile web add @deepseek-ai/dsh-experimental-agent-team-profile
 ```
 
-已有 profile 的 `package.json` 中，`dsh.profile.bundles` 应只保留 `@deepseek-ai/dsh-experimental-agent-team-profile`，删除独立的 `@deepseek-ai/dsh-experimental-agent-team-web-profile` 条目。用户 patch 中的 `ui-agent-team` 配置仍然有效。
+已有 profile 的 `package.json` 中，`dsh.profile.bundles` 应只保留 `@deepseek-ai/dsh-experimental-agent-team-profile`，删除独立的 `@deepseek-ai/dsh-experimental-agent-team-web-profile` 条目。用户 patch 中的 `ui-agent-team` 配置仍然有效。在 Web 或 Desktop profile 中，不支持覆盖 Host `tool-agent-team` 行的 `disabled`：Host 会再次挂载 Team 工具，每个会话会在其预设的 subagent 工具之外同时获得 Team 工具。
 
 ### 获得的功能
 
@@ -107,6 +107,7 @@ Team 策略与 schema 由 [`@deepseek-ai/dsh-experimental-tool-agent-team`](../t
 - **Workflow 子代理工具**——[Team 工具可见性限制](../tool-agent-team/README.zh.md#known-limitations-and-deferred-work)也适用于 workflow 子代理。
 - **共享 checkout**——所有 teammate 都观察同一个工作目录；本 bundle 不提供 worktree 隔离或文件系统锁。
 - **复制的预设列表**——`team` 预设复制了随附的 `standard` 插件列表。通过 Web 编辑器对 `standard` 的修改不会同步到 `team`，且该预设的英文名称和描述不做本地化。
+- **启动时读取组合包列表**——Host `tool-agent-team` 行和 `preset-team` 行读取 `profileContext.startedBundles`，即 profile 启动时的组合包列表。向运行中的 profile 添加或从中移除 `@deepseek-ai/dsh-web-app` 后，需要重启才会改变这两行中挂载的一行。
 - **需要 base profile**——本 patch 依赖 `dsh-base` 提供的配置行 id 与 Subagent 提供方；它不是独立 profile。
 
 <a id="dev-note"></a>
