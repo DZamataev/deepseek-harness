@@ -492,6 +492,9 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
  * Agents whose scope chain contains that preset revision, follows blank-session
  * recomposition on `tools/change`, and leaves Agents of another revision to
  * that revision's instance, so each Agent holds at most one installation.
+ * An installation failure during load or `agent/created` throws to that
+ * caller; during recomposition it is logged, the installation is rolled back so
+ * the Agent has no Team tools, and the next `tools/change` retries it.
  */
 export function apply(ctx: Context, config: Config = {}): void {
   const resolved: ResolvedConfig = {
@@ -536,7 +539,8 @@ export function apply(ctx: Context, config: Config = {}): void {
             if (belongs(agent)) maybeInstall(agent)
             else remove(agent)
           } catch (error: unknown) {
-            ctx.logger.warn(`tool-agent-team: failed to reconcile Team tools for Agent "${agent.id}": ${String(error)}`)
+            ctx.logger.warn(`tool-agent-team: failed to reconcile Team tools for Agent "${agent.id}": ${String(error)}; `
+              + 'this Agent has no Team tools until the next tool change, which retries the installation')
           }
         }
       } finally {

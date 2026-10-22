@@ -487,7 +487,7 @@ describe('dsh-tool-team', () => {
     await waitRunning(activeSetup.ctx, activeId)
     const controller = new AbortController()
     const waiting = execute(activeSetup.ctx, activeSetup.lead, 'wait_agent', { timeout_ms: 10_000 }, controller.signal)
-    await Promise.resolve()
+    await new Promise(resolve => setTimeout(resolve, 0))
     controller.abort({ kind: 'user' })
     const aborted = await waiting
     expect(aborted.isError).toBe(true)
@@ -956,13 +956,14 @@ describe('dsh-tool-team inside an Agent Preset', () => {
     await mountTeamRuntime(ctx)
     await ctx.plugin(AgentPresets, { default: 'standard' })
     await ctx.agentPresets.register({ id: 'standard', plugins: [] })
-    ctx.llm.registerAdapter(['mock'], new MockAdapter(script))
+    const adapter = new MockAdapter(script)
+    ctx.llm.registerAdapter(['mock'], adapter)
     const warnings: string[] = []
     ctx.logger.exporter({
       levels: { default: LoggerLevel.WARN },
       export: (message) => { if (message.type === 'warn') warnings.push(String(message.args[0])) },
     })
-    return { ctx, warnings }
+    return { ctx, adapter, warnings }
   }
 
   async function rootOn(ctx: Context, id: string, preset: string): Promise<Agent> {
@@ -1072,11 +1073,49 @@ describe('dsh-tool-team inside an Agent Preset', () => {
     await ctx.agentPresets.select(agent, 'pair')
     await vi.waitFor(() => { expect(warnings).toHaveLength(1) })
     expect(warnings[0]).toMatch(/failed to reconcile Team tools for Agent "collision".*already registered/u)
+    expect(warnings[0]).toContain('this Agent has no Team tools until the next tool change')
     expect(await teamTools(ctx, agent)).toEqual(['spawn_teammate'])
     expect((await assembly(ctx, agent)).contexts.some(context => context.name === 'team:identity')).toBe(false)
 
     unregisterCollision()
     await vi.waitFor(async () => { expect(await teamTools(ctx, agent)).toEqual(TOOL_NAMES) })
     expect(warnings).toHaveLength(1)
+  })
+
+  it('recovers when the target preset instance reconciles before the source instance', async () => {
+    const { ctx, warnings } = await presetSetup()
+    // The `target` row registers its `tools/change` listener first, so its
+    // reconciliation runs while the `pair` instance still holds the names.
+    await ctx.agentPresets.register({ id: 'target', plugins: [{ name: 'cordis:tool-agent-team', config: { interrupt: false } }] })
+    await ctx.agentPresets.register(pair())
+    const agent = await rootOn(ctx, 'switching', 'pair')
+    expect(await teamTools(ctx, agent)).toEqual(TOOL_NAMES)
+
+    await ctx.agentPresets.select(agent, 'target')
+    await vi.waitFor(async () => { expect(await teamTools(ctx, agent)).toEqual(WITHOUT_INTERRUPT) })
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toMatch(/failed to reconcile Team tools for Agent "switching".*already registered/u)
+  })
+
+  it('installs Team tools for a teammate resumed cold under the Lead preset', async () => {
+    const { ctx, adapter } = await presetSetup([textResponse('first task done'), textResponse('lead notice answer'), 'hang'])
+    await ctx.agentPresets.register(pair())
+    const lead = await rootOn(ctx, 'pair-lead', 'pair')
+    const spawned = await execute(ctx, lead, 'spawn_teammate', { name: 'worker', description: 'work', prompt: 'first' })
+    expect(spawned.isError, text(spawned)).toBe(false)
+    const childId = spawnedChildId(ctx, lead, spawned)
+    await waitNoAgent(ctx, childId)
+    // The completion notice runs one Lead turn; let it take its scripted answer first.
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(2) })
+    await lead.whenIdle()
+
+    const sent = await execute(ctx, lead, 'send_message', { target: 'worker', message: 'second' })
+    expect(sent.isError, text(sent)).toBe(false)
+    const resumed = await waitRunning(ctx, childId)
+    expect(ctx.agentPresets.composedPreset(resumed.ctx)).toBe('pair')
+    expect(await teamTools(ctx, resumed)).toEqual(TOOL_NAMES)
+    expect(renderContextSnapshot(await assembly(ctx, resumed))).toContain('You are teammate "worker".')
+    await execute(ctx, lead, 'interrupt_agent', { target: 'worker' })
+    await waitNoAgent(ctx, childId)
   })
 })
