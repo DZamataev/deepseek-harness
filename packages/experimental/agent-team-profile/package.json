@@ -38,15 +38,42 @@
     }
   },
   "dependencies": {
+    "@deepseek-ai/dsh-agent-instructions": "workspace:*",
+    "@deepseek-ai/dsh-agent-preset": "workspace:*",
+    "@deepseek-ai/dsh-command-compact": "workspace:*",
+    "@deepseek-ai/dsh-command-goal": "workspace:*",
+    "@deepseek-ai/dsh-compaction-basic": "workspace:*",
+    "@deepseek-ai/dsh-compaction-tool-result-pruner": "workspace:*",
     "@deepseek-ai/dsh-experimental-agent-team": "workspace:*",
     "@deepseek-ai/dsh-experimental-client-ui-agent-team": "workspace:*",
-    "@deepseek-ai/dsh-experimental-tool-agent-team": "workspace:*"
+    "@deepseek-ai/dsh-experimental-tool-agent-team": "workspace:*",
+    "@deepseek-ai/dsh-persona": "workspace:*",
+    "@deepseek-ai/dsh-plan-mode": "workspace:*",
+    "@deepseek-ai/dsh-plugin-manager": "workspace:*",
+    "@deepseek-ai/dsh-plugin-market": "workspace:*",
+    "@deepseek-ai/dsh-skill-filesystem": "workspace:*",
+    "@deepseek-ai/dsh-time-context": "workspace:*",
+    "@deepseek-ai/dsh-tool-ask-user": "workspace:*",
+    "@deepseek-ai/dsh-tool-bash": "workspace:*",
+    "@deepseek-ai/dsh-tool-fs": "workspace:*",
+    "@deepseek-ai/dsh-tool-fs-search": "workspace:*",
+    "@deepseek-ai/dsh-tool-goal": "workspace:*",
+    "@deepseek-ai/dsh-tool-jobs": "workspace:*",
+    "@deepseek-ai/dsh-tool-present": "workspace:*",
+    "@deepseek-ai/dsh-tool-pwsh": "workspace:*",
+    "@deepseek-ai/dsh-tool-schedule": "workspace:*",
+    "@deepseek-ai/dsh-tool-skill": "workspace:*",
+    "@deepseek-ai/dsh-tool-todo": "workspace:*",
+    "@deepseek-ai/dsh-tool-web": "workspace:*",
+    "@deepseek-ai/dsh-tool-workflow": "workspace:*",
+    "@deepseek-ai/dsh-workflow-ptc": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~"
   },
   "devDependencies": {
     "@deepseek-ai/cordis-plugin-include": "workspace:~",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:~",
     "@deepseek-ai/cordis": "workspace:~",
     "js-yaml": "^4.3.2"
   }

@@ -804,8 +804,11 @@ describe('web e2e: plugin manager', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-team'))
     const panel = await openPluginsPanel()
     const toggle = panel.getByRole('switch', { name: '启用 智能体团队', exact: true })
+    // A Web profile mounts the Team tools through the `team` preset, not at the Host.
     const teamRows = () => [...scaffold.ctx.loader.entries()]
-      .filter(entry => ['agent-team', 'tool-agent-team', 'ui-agent-team'].includes(entry.options.id))
+      .filter(entry => ['agent-team', 'preset-team', 'ui-agent-team'].includes(entry.options.id))
+    const hostTeamTools = () => [...scaffold.ctx.loader.entries()]
+      .filter(entry => entry.options.id === 'tool-agent-team' && entry.fiber?.state === FiberState.ACTIVE)
     const teamPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     const teamTripwire = watchConsole(teamPage)
     try {
@@ -828,6 +831,7 @@ describe('web e2e: plugin manager', () => {
       await toggle.click()
       try {
         await expect.poll(() => teamRows().filter(entry => entry.fiber?.state === FiberState.ACTIVE).length, { timeout: 20_000 }).toBe(3)
+        expect(hostTeamTools()).toEqual([])
         await expect.poll(() => toggle.getAttribute('aria-checked'), { timeout: PLUGIN_TOGGLE_SETTLE_MS }).toBe('true')
         await action.waitFor({ timeout: 20_000 })
         await action.getByRole('button', { name: '智能体团队', exact: true }).click()
