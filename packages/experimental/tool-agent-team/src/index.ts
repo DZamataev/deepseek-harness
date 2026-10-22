@@ -3,6 +3,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { scopeChainOf, scopeOf } from '@deepseek-ai/dsh-scope'
 import { TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team'
 import type { TeamMemberView } from '@deepseek-ai/dsh-experimental-agent-team'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
@@ -484,7 +485,14 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
   }
 }
 
-/** Install Team tools in every live or subsequently published Team member scope. */
+/**
+ * Install Team tools in the scope of every live or subsequently published Team
+ * member composed by this plugin's mounting context. A Host mount (unscoped
+ * context) serves every Agent. A mount inside an Agent Preset serves only
+ * Agents whose scope chain contains that preset revision, follows blank-session
+ * recomposition on `tools/change`, and leaves Agents of another revision to
+ * that revision's instance, so each Agent holds at most one installation.
+ */
 export function apply(ctx: Context, config: Config = {}): void {
   const resolved: ResolvedConfig = {
     interrupt: config.interrupt ?? true,
@@ -492,19 +500,61 @@ export function apply(ctx: Context, config: Config = {}): void {
     forkProvider: config.forkProvider ?? 'fork',
     routes: resolveTeamRoutes(config.models ?? [], config.roles ?? {}),
   }
+  const composition = scopeOf(ctx)
   const installed = new Map<Agent, () => void>()
+  let active = true
+  const belongs = (agent: Agent): boolean =>
+    composition === undefined || scopeChainOf(scopeOf(agent.ctx)).includes(composition)
   const maybeInstall = (agent: Agent): void => {
-    if (installed.has(agent) || ctx.agentTeams.tryMembership(agent) === undefined) return
+    if (installed.has(agent) || !belongs(agent) || ctx.agentTeams.tryMembership(agent) === undefined) return
     installed.set(agent, install(agent, ctx, resolved))
   }
-  for (const agent of ctx.agents.list()) maybeInstall(agent)
-  ctx.on('agent/created', ({ agent }) => { maybeInstall(agent) })
-  ctx.on('agent/disposed', ({ agent }) => {
-    installed.get(agent)?.()
+  const remove = (agent: Agent): void => {
+    const dispose = installed.get(agent)
+    if (dispose === undefined) return
     installed.delete(agent)
-  })
+    dispose()
+  }
+  if (composition !== undefined) {
+    // Recomposition rebinds a blank Agent and then emits `tools/change`, and
+    // another revision's instance removes its registrations one at a time,
+    // each emitting `tools/change`. Reconciling after the synchronous emitter
+    // returns sees the final ancestry and the completed removal. Changes
+    // emitted by the reconciliation's own registrations, including the
+    // rollback of a failed installation, do not schedule another pass.
+    let scheduled = false
+    let reconciling = false
+    const reconcile = (): void => {
+      scheduled = false
+      if (!active) return
+      reconciling = true
+      try {
+        for (const agent of ctx.agents.list()) {
+          // A microtask has no caller to report to; a failed installation (a
+          // same-scope name collision) leaves that Agent without Team tools.
+          try {
+            if (belongs(agent)) maybeInstall(agent)
+            else remove(agent)
+          } catch (error: unknown) {
+            ctx.logger.warn(`tool-agent-team: failed to reconcile Team tools for Agent "${agent.id}": ${String(error)}`)
+          }
+        }
+      } finally {
+        reconciling = false
+      }
+    }
+    ctx.on('tools/change', () => {
+      if (scheduled || reconciling) return
+      scheduled = true
+      queueMicrotask(reconcile)
+    })
+  }
   ctx.effect(() => () => {
+    active = false
     for (const dispose of installed.values()) dispose()
     installed.clear()
   }, 'tool-team.scopedTools()')
+  ctx.on('agent/created', ({ agent }) => { maybeInstall(agent) })
+  ctx.on('agent/disposed', ({ agent }) => { remove(agent) })
+  for (const agent of ctx.agents.list()) maybeInstall(agent)
 }

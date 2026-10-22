@@ -27,6 +27,8 @@ This package lets the model create named teammates, send them messages, inspect 
 
 Add this package on top of `@deepseek-ai/dsh-experimental-agent-team` when the model should run a team through tools. Once mounted, every team member — the Lead and each teammate — gets the same nine tools plus the same coordination policy. Each member receives its current role and name through required runtime context; `spawn_teammate` sends the initial task unchanged.
 
+Mounted at the Host, the plugin serves every session. Mounted in an Agent Preset's `plugins`, it serves only sessions composed under that preset, their teammates included, and follows a blank session switching into or out of the preset; `@deepseek-ai/dsh-experimental-agent-team` stays at the Host either way.
+
 ### When to choose it
 
 Choose it when the model should create and coordinate teammates by itself rather than a human driving subagent controls. Avoid it when the legacy global subagent tools with the same names must stay available: the team tools replace them for team members, so a composition that wants both must disable the legacy definitions.
@@ -131,7 +133,7 @@ One `team:policy` section on the member scope states the shared coordination rul
 
 ### Scoped registration and teardown
 
-`maybeInstall` runs for every live Agent and subscribes to `agent/created`; it skips Agents without Team membership. Disposal of an Agent runs the installed disposer, and plugin HMR disposes every installed scope before reinstall. Each disposer unwinds registrations in reverse order, so a failed install cannot leave a partial scope.
+`maybeInstall` runs for every live Agent and subscribes to `agent/created`; it skips Agents without Team membership and, in an Agent Preset mount, Agents whose scope chain lacks that preset revision, so another revision's instance keeps its own Agents. A preset mount also reconciles all Agents in a microtask after `tools/change`: it installs into Agents a blank-session selection moved into the revision, removes from Agents moved out, and logs a failed installation instead of throwing it. Disposal of an Agent runs the installed disposer, and plugin HMR disposes every installed scope before reinstall. Each disposer unwinds registrations in reverse order, so a failed install cannot leave a partial scope.
 
 </details>
 

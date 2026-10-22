@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, LoggerLevel } from '@deepseek-ai/cordis'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
+import AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
 import { ReasoningEffortId, ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import { SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
@@ -69,9 +71,8 @@ afterEach(async () => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-async function setup(script: ConstructorParameters<typeof MockAdapter>[0], legacyControl = false) {
-  const ctx = new Context()
-  contexts.add(ctx)
+/** Mount the Agent, persistence, subagent, and TeamService runtime without the Team tool plugin. */
+async function mountTeamRuntime(ctx: Context, legacyControl = false): Promise<void> {
   await mountAgentLoopTestDependencies(ctx)
   await mountWorkingDirectoryFixture(ctx)
   const storageRoot = mkdtempSync(join(tmpdir(), 'dsh-tool-team-'))
@@ -84,6 +85,12 @@ async function setup(script: ConstructorParameters<typeof MockAdapter>[0], legac
   await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
   await ctx.plugin(SubagentFork, { providerName: 'fork' })
   await ctx.plugin(TeamService)
+}
+
+async function setup(script: ConstructorParameters<typeof MockAdapter>[0], legacyControl = false) {
+  const ctx = new Context()
+  contexts.add(ctx)
+  await mountTeamRuntime(ctx, legacyControl)
   const fiber = await ctx.plugin(toolTeam)
   const adapter = new MockAdapter(script)
   ctx.llm.registerAdapter(['mock'], adapter)
@@ -480,7 +487,7 @@ describe('dsh-tool-team', () => {
     await waitRunning(activeSetup.ctx, activeId)
     const controller = new AbortController()
     const waiting = execute(activeSetup.ctx, activeSetup.lead, 'wait_agent', { timeout_ms: 10_000 }, controller.signal)
-    await new Promise(resolve => setTimeout(resolve, 0))
+    await Promise.resolve()
     controller.abort({ kind: 'user' })
     const aborted = await waiting
     expect(aborted.isError).toBe(true)
@@ -933,5 +940,143 @@ describe('dsh-tool-team teammate LLM routes', () => {
     expect(resolveCallConfig).not.toHaveBeenCalled()
     await execute(ctx, lead, 'interrupt_agent', { target: 'reviewer' })
     await waitNoAgent(ctx, childId)
+  })
+})
+
+describe('dsh-tool-team inside an Agent Preset', () => {
+  // A `cordis:` builtin keeps the preset row on this test's module instance of the plugin and its scope helpers.
+  const pair = (config: toolTeam.Config = {}) => ({ id: 'pair', plugins: [{ name: 'cordis:tool-agent-team', config }] })
+
+  /** Real preset registry over the Team runtime, with a `standard` preset that has no Team tools. */
+  async function presetSetup(script: ConstructorParameters<typeof MockAdapter>[0] = []) {
+    const ctx = new Context()
+    contexts.add(ctx)
+    await ctx.plugin(Loader)
+    ctx.loader.builtins['tool-agent-team'] = toolTeam
+    await mountTeamRuntime(ctx)
+    await ctx.plugin(AgentPresets, { default: 'standard' })
+    await ctx.agentPresets.register({ id: 'standard', plugins: [] })
+    ctx.llm.registerAdapter(['mock'], new MockAdapter(script))
+    const warnings: string[] = []
+    ctx.logger.exporter({
+      levels: { default: LoggerLevel.WARN },
+      export: (message) => { if (message.type === 'warn') warnings.push(String(message.args[0])) },
+    })
+    return { ctx, warnings }
+  }
+
+  async function rootOn(ctx: Context, id: string, preset: string): Promise<Agent> {
+    const handle = await ctx.agents.create({
+      sessionId: SessionId(id),
+      agentOptions: { provider: 'mock', model: 'mock' },
+      setup: async (agentCtx) => { await ctx.agentPresets.mount(agentCtx, preset) },
+    })
+    return handle.agent
+  }
+
+  async function teamTools(ctx: Context, agent: Agent): Promise<string[]> {
+    return (await assembly(ctx, agent)).tools.map(schema => schema.name).filter(name => TOOL_NAMES.includes(name)).sort()
+  }
+
+  const WITHOUT_INTERRUPT = TOOL_NAMES.filter(name => name !== 'interrupt_agent')
+
+  it('serves only Agents composed under its preset', async () => {
+    const { ctx, warnings } = await presetSetup()
+    const earlier = await rootOn(ctx, 'standard-earlier', 'standard')
+    await ctx.agentPresets.register(pair())
+    const lead = await rootOn(ctx, 'pair-lead', 'pair')
+    const later = await rootOn(ctx, 'standard-later', 'standard')
+
+    expect(await teamTools(ctx, lead)).toEqual(TOOL_NAMES)
+    expect(renderContextSnapshot(await assembly(ctx, lead))).toContain('You are the Team Lead named "lead".')
+    for (const agent of [earlier, later]) {
+      expect(await teamTools(ctx, agent)).toEqual([])
+      expect(renderPrompt(await assembly(ctx, agent))).not.toContain('Agent Teams is available')
+    }
+    expect(warnings).toEqual([])
+  })
+
+  it('follows blank-session preset selection in and out of the preset', async () => {
+    const { ctx, warnings } = await presetSetup()
+    await ctx.agentPresets.register(pair())
+    const agent = await rootOn(ctx, 'picker', 'standard')
+    expect(await teamTools(ctx, agent)).toEqual([])
+
+    await ctx.agentPresets.select(agent, 'pair')
+    await vi.waitFor(async () => { expect(await teamTools(ctx, agent)).toEqual(TOOL_NAMES) })
+    await ctx.agentPresets.select(agent, 'standard')
+    await vi.waitFor(async () => { expect(await teamTools(ctx, agent)).toEqual([]) })
+    expect(renderContextSnapshot(await assembly(ctx, agent))).not.toContain('Team Lead')
+    await ctx.agentPresets.select(agent, 'pair')
+    await vi.waitFor(async () => { expect(await teamTools(ctx, agent)).toEqual(TOOL_NAMES) })
+    expect(warnings).toEqual([])
+  })
+
+  it('installs Team tools for a teammate that joins the Lead preset', async () => {
+    const { ctx } = await presetSetup(['hang'])
+    await ctx.agentPresets.register(pair())
+    const lead = await rootOn(ctx, 'pair-lead', 'pair')
+    const spawned = await execute(ctx, lead, 'spawn_teammate', { name: 'worker', description: 'work', prompt: 'wait' })
+    expect(spawned.isError, text(spawned)).toBe(false)
+    const childId = spawnedChildId(ctx, lead, spawned)
+    const child = await waitRunning(ctx, childId)
+
+    expect(ctx.agentPresets.composedPreset(child.ctx)).toBe('pair')
+    expect(await teamTools(ctx, child)).toEqual(TOOL_NAMES)
+    expect(renderContextSnapshot(await assembly(ctx, child))).toContain('You are teammate "worker".')
+    await execute(ctx, lead, 'interrupt_agent', { target: 'worker' })
+    await waitNoAgent(ctx, childId)
+  })
+
+  it('keeps a Host mount serving every preset across selection', async () => {
+    const { ctx } = await presetSetup()
+    await ctx.agentPresets.register({ id: 'other', plugins: [] })
+    await ctx.plugin(toolTeam)
+    const standard = await rootOn(ctx, 'host-standard', 'standard')
+    const other = await rootOn(ctx, 'host-other', 'other')
+    expect(await teamTools(ctx, standard)).toEqual(TOOL_NAMES)
+    expect(await teamTools(ctx, other)).toEqual(TOOL_NAMES)
+
+    await ctx.agentPresets.select(standard, 'other')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(await teamTools(ctx, standard)).toEqual(TOOL_NAMES)
+  })
+
+  it('keeps one installation per Agent across a preset revision update', async () => {
+    const { ctx, warnings } = await presetSetup()
+    const unregister = await ctx.agentPresets.register(pair())
+    const retained = await rootOn(ctx, 'old-revision', 'pair')
+    await unregister()
+    await ctx.agentPresets.register(pair({ interrupt: false }))
+    expect(await teamTools(ctx, retained)).toEqual(TOOL_NAMES)
+    const fresh = await rootOn(ctx, 'new-revision', 'pair')
+    expect(await teamTools(ctx, fresh)).toEqual(WITHOUT_INTERRUPT)
+
+    await ctx.agentPresets.select(retained, 'pair')
+    await vi.waitFor(async () => { expect(await teamTools(ctx, retained)).toEqual(WITHOUT_INTERRUPT) })
+    expect(await teamTools(ctx, fresh)).toEqual(WITHOUT_INTERRUPT)
+    expect(warnings).toEqual([])
+  })
+
+  it('logs a recomposition collision once and installs after the collision is removed', async () => {
+    const { ctx, warnings } = await presetSetup()
+    await ctx.agentPresets.register(pair())
+    const agent = await rootOn(ctx, 'collision', 'standard')
+    const unregisterCollision = agent.ctx.tools.register(defineContentToolFixture({
+      name: 'spawn_teammate',
+      description: 'intentional collision',
+      parameters: {},
+      async execute() { return [{ type: 'text', text: 'collision' }] },
+    }))
+
+    await ctx.agentPresets.select(agent, 'pair')
+    await vi.waitFor(() => { expect(warnings).toHaveLength(1) })
+    expect(warnings[0]).toMatch(/failed to reconcile Team tools for Agent "collision".*already registered/u)
+    expect(await teamTools(ctx, agent)).toEqual(['spawn_teammate'])
+    expect((await assembly(ctx, agent)).contexts.some(context => context.name === 'team:identity')).toBe(false)
+
+    unregisterCollision()
+    await vi.waitFor(async () => { expect(await teamTools(ctx, agent)).toEqual(TOOL_NAMES) })
+    expect(warnings).toHaveLength(1)
   })
 })
