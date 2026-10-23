@@ -540,6 +540,46 @@ describe('ui-model-selection dual entry', () => {
     await Promise.resolve()
     expect(b.calls).toEqual({ models: 2, select: 0 })
   })
+
+  it('publishes an addressed subagent\'s recorded route instead of the catalog default', async () => {
+    const b = await bench()
+    b.mint('child')
+    b.address(sid('child'))
+    const store = b.ctx.modelDirectories.directoryFor(sid('child')).store
+    await vi.waitFor(() => { expect(store.getSnapshot().status).toBe('ready') })
+    expect(store.getSnapshot()).toMatchObject({ current: null, routable: null, pending: null })
+    expect(store.getSnapshot().retainedEffort).toBeUndefined()
+
+    b.setProjected(sid('child'), {
+      lastUsed: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'max' },
+      next: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    })
+    expect(store.getSnapshot()).toMatchObject({
+      current: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'max' },
+      retainedEffort: 'Max',
+      routable: true,
+      status: 'ready',
+    })
+
+    b.setProjected(sid('child'), { lastUsed: { provider: 'anthropic', model: 'claude-opus-5', reasoningEffort: 'high' }, next: null })
+    expect(store.getSnapshot()).toMatchObject({ current: { model: 'claude-opus-5' }, retainedEffort: 'high', routable: false })
+
+    b.ctx.emit('connection/reset')
+    expect(store.getSnapshot()).toMatchObject({ current: { model: 'claude-opus-5' }, routable: null, status: 'loading', groups: [] })
+    await vi.waitFor(() => { expect(store.getSnapshot().status).toBe('ready') })
+    expect(b.calls.select).toBe(0)
+  })
+
+  it('reports a catalog failure on an addressed subagent\'s readout state', async () => {
+    const b = await bench()
+    b.mint('child')
+    b.address(sid('child'))
+    b.setCatalogFailure(true)
+    b.ctx.emit('connection/reset')
+    const store = b.ctx.modelDirectories.directoryFor(sid('child')).store
+    await vi.waitFor(() => { expect(store.getSnapshot().status).toBe('error') })
+    expect(store.getSnapshot()).toMatchObject({ current: null, routable: null })
+  })
 })
 
 

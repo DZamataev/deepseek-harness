@@ -12,11 +12,15 @@ import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { RemoteResult, TypertClientRemote } from '@deepseek-ai/dsh-typert-protocol'
 import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import type { ModelCatalogDirectory } from './catalog.ts'
+import type { ModelCatalogDirectory, ModelCatalogState } from './catalog.ts'
 
 /** Directory snapshot both entries render from. */
 export interface ModelDirectoryState {
-  /** Saved selection, retained even when its provider or model leaves the catalog. */
+  /**
+   * Saved selection, retained even when its provider or model leaves the
+   * catalog. For an addressed subagent Session: the route of its latest
+   * recorded request, or null before its first request.
+   */
   current: ModelSelection | null
   /** Saved effort caption retained when the selected model is unavailable. */
   retainedEffort?: string
@@ -158,6 +162,10 @@ export class ModelDirectory {
     if (this.disposed) return
     const catalog = this.catalog.store.getSnapshot()
     const projected = modelSelectionProjection(this.projected.getSnapshot())
+    if (!this.available()) {
+      this.syncRecorded(catalog, projected)
+      return
+    }
     const intended = projected?.next ?? catalog.value?.default
     const reasoning = intended === undefined ? undefined : this.catalog.reasoningFor(intended)
     const effort = intended?.reasoningEffort ?? reasoning?.defaultEffort
@@ -190,6 +198,30 @@ export class ModelDirectory {
         : 'ready',
       pending: this.store.getSnapshot().pending,
       error: null,
+    })
+  }
+
+  /**
+   * Publish the route an addressed subagent recorded. Such a Session has no
+   * selection of its own, so the catalog default never stands in for it.
+   */
+  private syncRecorded(catalog: ModelCatalogState, projected: ModelSelectionProjection | undefined): void {
+    const current = projected?.lastUsed ?? null
+    const reasoning = current === null ? undefined : this.catalog.reasoningFor(current)
+    const effort = current?.reasoningEffort ?? reasoning?.defaultEffort
+    const retainedEffort = effort === undefined ? undefined
+      : reasoning?.efforts.find(level => level.id === effort)?.name ?? effort
+    const groups = catalog.status === 'ready' ? catalog.value?.groups : undefined
+    this.store.set({
+      current,
+      ...retainedEffort === undefined ? {} : { retainedEffort },
+      routable: groups === undefined || current === null ? null : groups.some(group =>
+        group.id === current.provider && group.models.some(model => model.id === current.model)),
+      groups: catalog.value?.groups ?? [],
+      failures: catalog.value?.failures ?? [],
+      status: groups !== undefined ? 'ready' : catalog.status === 'error' ? 'error' : 'loading',
+      pending: null,
+      error: catalog.error,
     })
   }
 }

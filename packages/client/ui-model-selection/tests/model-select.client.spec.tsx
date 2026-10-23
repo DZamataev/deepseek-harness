@@ -426,19 +426,51 @@ describe('ModelSelect reasoning effort', () => {
     }
   })
 
-  it('renders no Agent-bound control for an addressed subagent session', () => {
+  function renderReadout(directory: ModelDirectoryState) {
     const load = vi.fn()
-    render(<ModelSelect renderSlot={renderLabel}
+    const select = vi.fn().mockResolvedValue(undefined)
+    const view = render(<ModelSelect renderSlot={renderLabel}
       locked={false}
       available={false}
-      directory={createSnapshotStore(state())}
+      directory={createSnapshotStore(directory)}
       load={load}
-      select={vi.fn().mockResolvedValue(undefined)}
+      select={select}
       t={t}
     />)
+    return { ...view, load, select }
+  }
+
+  it('shows an addressed subagent route as a readout without an Agent-bound control', () => {
+    const { load, select } = renderReadout(state({
+      current: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'max' },
+    }))
 
     expect(screen.queryByRole('button')).toBeNull()
+    const readout = screen.getByRole('note', { name: '模型 DeepSeek-V4-Flash，推理等级 Max' })
+    expect(readout.textContent).toBe('DeepSeek-V4-Flash' + 'Max')
+    expect(readout.getAttribute('title')).toBe('DeepSeek-V4-Flash · Max')
     expect(load).not.toHaveBeenCalled()
+    expect(select).not.toHaveBeenCalled()
+  })
+
+  it('shows an uncatalogued subagent route by its model id and retained effort', () => {
+    renderReadout(state({
+      current: { provider: 'anthropic', model: 'claude-opus-5', reasoningEffort: 'high' },
+      retainedEffort: 'high',
+    }))
+    const readout = screen.getByRole('note', { name: '模型 claude-opus-5，推理等级 high' })
+    expect(readout.textContent).toBe('claude-opus-5' + 'high')
+  })
+
+  it('shows an uncatalogued subagent route without effort by its model id alone', () => {
+    renderReadout(state({ current: { provider: 'anthropic', model: 'claude-opus-5' }, groups: [] }))
+    const readout = screen.getByRole('note', { name: '模型 claude-opus-5' })
+    expect(readout.getAttribute('title')).toBe('claude-opus-5')
+  })
+
+  it('renders nothing for an addressed subagent before its first request', () => {
+    const { container } = renderReadout(state({ current: null }))
+    expect(container.childElementCount).toBe(0)
   })
 })
 

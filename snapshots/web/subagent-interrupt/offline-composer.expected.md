@@ -23,5 +23,6 @@
 - textbox "Parent session offline; sending is unavailable but you can still stop the run" [disabled]
 - button "Add files or run commands" [disabled]
 - 'button "Access mode, current: Custom" [disabled]': Custom
+- note "Model DeepSeek-V4-Flash": DeepSeek-V4-Flash
 - button "Stop generating"
 - button "Send message" [disabled]

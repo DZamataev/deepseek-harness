@@ -1,7 +1,7 @@
 - tree "Subagent sessions":
-  - treeitem "event-sourcing researcher Explain event sourcing in one · continuable · completed 7.9K tok · {{duration}}" [expanded] [level=1]:
+  - treeitem "event-sourcing researcher deepseek-v4-flash · Explain event sourcing in one · continuable · completed 7.9K tok · {{duration}}" [expanded] [level=1]:
     - button "Collapse event-sourcing researcher descendants"
-    - text: event-sourcing researcher Explain event sourcing in one · continuable · completed 7.9K tok {{duration}}
+    - text: event-sourcing researcher deepseek-v4-flash · Explain event sourcing in one · continuable · completed 7.9K tok {{duration}}
     - button "Open event-sourcing researcher in sidebar"
   - group:
     - treeitem "example editor continuable · completed 0 tok · {{duration}}" [level=2]:
