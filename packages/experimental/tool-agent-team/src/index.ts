@@ -210,7 +210,7 @@ interface RouteParameters {
  * Build the route parameters of `spawn_teammate`. Without configured models
  * or roles the tool schema has no route parameters.
  * @param routes - Validated route configuration.
- * @returns `role` when roles exist, and `provider`, `model`, and `reasoning_effort` when any route is allowed.
+ * @returns `role` when roles exist, `provider` and `model` when any route is allowed, and `reasoning_effort` with either.
  */
 function routeParameters(routes: TeamRoutes): RouteParameters {
   if (!routeSelectionEnabled(routes)) return {}
@@ -218,8 +218,10 @@ function routeParameters(routes: TeamRoutes): RouteParameters {
     ...routes.roles.size === 0 ? {} : {
       role: { type: 'string', enum: [...routes.roles.keys()], description: roleParameterDescription(routes) },
     },
-    provider: { type: 'string', description: providerParameterDescription(routes) },
-    model: { type: 'string', description: 'Exact model id for the teammate; supply together with provider.' },
+    ...routes.allowed.length === 0 ? {} : {
+      provider: { type: 'string', description: providerParameterDescription(routes) },
+      model: { type: 'string', description: 'Exact model id for the teammate; supply together with provider.' },
+    },
     reasoning_effort: {
       type: 'string',
       description: 'Reasoning effort for the selected role or provider/model, replacing a role effort; requires role or provider/model. Omit to use the role effort or the model default.',
