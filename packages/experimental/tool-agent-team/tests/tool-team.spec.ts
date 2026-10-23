@@ -1029,6 +1029,57 @@ describe('dsh-tool-team inside an Agent Preset', () => {
     await waitNoAgent(ctx, childId)
   })
 
+  const PRESET_ROLES = {
+    roles: {
+      'codex-worker': { description: 'Works under the Codex preset', provider: 'mock', model: 'mock', agentPreset: 'team-codex' },
+      'bare-worker': { description: 'Works under a preset without Team tools', provider: 'mock', model: 'mock', agentPreset: 'bare' },
+    },
+  }
+
+  it('composes a role teammate from the role preset while the Lead keeps its own', async () => {
+    const { ctx, warnings } = await presetSetup(['hang'])
+    await ctx.agentPresets.register(pair(PRESET_ROLES))
+    await ctx.agentPresets.register({ id: 'team-codex', plugins: [{ name: 'cordis:tool-agent-team', config: { interrupt: false } }] })
+    const lead = await rootOn(ctx, 'pair-lead', 'pair')
+    const spawnTeammate = vi.spyOn(ctx.agentTeams, 'spawnTeammate')
+
+    const spawned = await execute(ctx, lead, 'spawn_teammate', {
+      name: 'coder', description: 'implement', prompt: 'wait', role: 'codex-worker',
+    })
+    expect(spawned.isError, text(spawned)).toBe(false)
+    expect(spawnTeammate.mock.calls[0]?.[1]).toMatchObject({ agentPreset: 'team-codex', context: 'fresh' })
+    const childId = spawnedChildId(ctx, lead, spawned)
+    const child = await waitRunning(ctx, childId)
+
+    expect(ctx.agentPresets.composedPreset(child.ctx)).toBe('team-codex')
+    expect(ctx.agentPresets.composedPreset(lead.ctx)).toBe('pair')
+    expect(await teamTools(ctx, child)).toEqual(WITHOUT_INTERRUPT)
+    expect(await teamTools(ctx, lead)).toEqual(TOOL_NAMES)
+    expect(renderContextSnapshot(await assembly(ctx, child))).toContain('You are teammate "coder".')
+    expect(child.session.snapshotEvents().some(event => event.type === 'agent-preset/selected')).toBe(true)
+    await execute(ctx, lead, 'interrupt_agent', { target: 'coder' })
+    await waitNoAgent(ctx, childId)
+    expect(warnings).toEqual([])
+  })
+
+  it.each([
+    ['a fork teammate', { role: 'codex-worker', context: 'fork' }, 'a fork teammate inherits the Lead preset'],
+    ['a preset without Team tools', { role: 'bare-worker' }, 'agent preset "bare", which does not mount tool-agent-team'],
+  ])('rejects a role preset for %s before consuming the teammate name', async (_case, args, message) => {
+    const { ctx } = await presetSetup(['hang'])
+    await ctx.agentPresets.register(pair(PRESET_ROLES))
+    await ctx.agentPresets.register({ id: 'team-codex', plugins: [{ name: 'cordis:tool-agent-team' }] })
+    await ctx.agentPresets.register({ id: 'bare', plugins: [] })
+    const lead = await rootOn(ctx, 'pair-lead', 'pair')
+    const spawnTeammate = vi.spyOn(ctx.agentTeams, 'spawnTeammate')
+
+    const rejected = await execute(ctx, lead, 'spawn_teammate', { name: 'coder', description: 'implement', prompt: 'wait', ...args })
+    expect(rejected.isError).toBe(true)
+    expect(text(rejected)).toContain(message)
+    expect(spawnTeammate).not.toHaveBeenCalled()
+    expect(ctx.agentTeams.listMembers(lead).map(member => member.name)).toEqual(['lead'])
+  })
+
   it('keeps a Host mount serving every preset across selection', async () => {
     const { ctx } = await presetSetup()
     await ctx.agentPresets.register({ id: 'other', plugins: [] })

@@ -381,6 +381,57 @@ describe('Team identity and provisioning', () => {
     expect(durable(lead).members).toEqual([])
   })
 
+  it('forwards a fresh teammate preset to the child activation without recording it on the member', async () => {
+    const { ctx, lead } = await setup([])
+    vi.spyOn(teamInternals(ctx).roster, 'checkpointInitialPrompt').mockResolvedValueOnce()
+    const startActivation = vi.spyOn(ctx.subagents, 'startActivation').mockImplementationOnce(async spec => ({
+      result: Promise.resolve({ output: [], stopReason: 'completed' as const }),
+      dispose: async () => {},
+      childId: spec.childId!,
+      messageId: createUserMessage({ content: content('accepted'), source: { kind: 'user' } }).id,
+    }))
+
+    const started = await ctx.agentTeams.spawnTeammate(lead, {
+      name: 'preset-worker',
+      description: 'preset responsibility',
+      prompt: content('preset initial'),
+      context: 'fresh',
+      provider: 'spawn',
+      agentOptions: { provider: 'mock', model: 'mock' },
+      agentPreset: ' team-codex ',
+      signal: SIGNAL,
+    })
+    expect(startActivation.mock.calls[0]?.[0].request).toMatchObject({
+      agentPreset: 'team-codex',
+      agentOptions: { provider: 'mock', model: 'mock' },
+    })
+    expect(started.member).toMatchObject({ status: 'inactive', provider: 'spawn' })
+    expect(durable(lead).members[0]).not.toHaveProperty('agentPreset')
+    expect(lead.session.snapshotEvents().flatMap(event => event.type === 'team/member' ? [event.data.version] : []))
+      .toEqual([3, 3])
+  })
+
+  it.each([
+    ['a blank preset', 'fresh' as const, ' ', 'agentPreset must be non-empty'],
+    ['a preset on a fork teammate', 'fork' as const, 'team-codex', 'cannot select agentPreset'],
+  ])('rejects %s before provisioning', async (_case, context, agentPreset, message) => {
+    const { ctx, lead } = await setup([])
+    const startActivation = vi.spyOn(ctx.subagents, 'startActivation')
+    const rejected = ctx.agentTeams.spawnTeammate(lead, {
+      name: 'preset-rejected',
+      description: 'never provisioned',
+      prompt: content('unused'),
+      context,
+      provider: context === 'fork' ? 'fork' : 'spawn',
+      agentPreset,
+      signal: SIGNAL,
+    })
+    await expect(rejected).rejects.toThrow(message)
+    await expect(rejected).rejects.toMatchObject({ code: 'TEAM_INVALID_ARGUMENT' })
+    expect(startActivation).not.toHaveBeenCalled()
+    expect(durable(lead).members).toEqual([])
+  })
+
   it('flushes the accepted child prompt before committing the active roster edge', async () => {
     const { ctx, lead } = await setup([textResponse('checkpointed child answer')])
     const flush = ctx.sessions.flush.bind(ctx.sessions)

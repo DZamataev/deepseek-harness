@@ -205,6 +205,13 @@ export interface SpawnTeammateRequest {
   readonly provider: string
   /** LLM route for the teammate; omitted, the child inherits the Lead route. */
   readonly agentOptions?: TeammateRoute
+  /**
+   * Agent Preset id composing the teammate instead of the Lead's preset; only a
+   * `fresh` teammate accepts one. The child Session records the selection, and
+   * the subagent manager restores it on cold resume; the Team member record
+   * does not repeat it.
+   */
+  readonly agentPreset?: string
   readonly signal: AbortSignal
 }
 

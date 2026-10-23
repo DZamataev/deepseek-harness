@@ -241,6 +241,10 @@ export class TeamRoster {
     const description = requiredText(request.description, 'description', 200)
     const childId = brandString<SessionId>(randomUUID())
     const route = request.agentOptions === undefined ? undefined : normalizedRoute(request.agentOptions)
+    const agentPreset = request.agentPreset === undefined ? undefined : requiredText(request.agentPreset, 'agentPreset', 200)
+    if (agentPreset !== undefined && request.context === 'fork') {
+      throw new TeamError('a fork teammate inherits the Lead preset and cannot select agentPreset', 'TEAM_INVALID_ARGUMENT')
+    }
     const member: TeamMemberSnapshot = {
       id: childId,
       name,
@@ -276,6 +280,7 @@ export class TeamRoster {
           prompt: request.prompt,
           parent: root,
           ...route === undefined ? {} : { agentOptions: route },
+          ...agentPreset === undefined ? {} : { agentPreset },
         },
         signal,
       })

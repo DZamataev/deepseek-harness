@@ -7,11 +7,14 @@ import { scopeChainOf, scopeOf } from '@deepseek-ai/dsh-scope'
 import { TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team'
 import type { TeamMemberView } from '@deepseek-ai/dsh-experimental-agent-team'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
+import { TeamError } from '@deepseek-ai/dsh-experimental-agent-team'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { InferValue, StringValueSchemaSpec, ValueSchemaSpec } from '@deepseek-ai/dsh-tools'
 import {
   TeammateModelRouteSchema,
   TeammateRolesSchema,
+  preflightTeammatePreset,
   preflightTeammateRoute,
   providerParameterDescription,
   resolveTeamRoutes,
@@ -278,6 +281,15 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
         const selection = routed && ctx.agentTeams.membership(agent).role === 'lead'
           ? selectTeammateRoute(config.routes, args)
           : undefined
+        if (selection?.agentPreset !== undefined) {
+          if (context === 'fork') {
+            throw new TeamError(
+              `role "${selection.agentPreset.role}" selects agent preset "${selection.agentPreset.id}"; a fork teammate inherits the Lead preset, so use context "fresh"`,
+              'TEAM_INVALID_ARGUMENT',
+            )
+          }
+          await preflightTeammatePreset(agent.ctx.get('agentPresets'), selection.agentPreset)
+        }
         if (selection !== undefined) await preflightTeammateRoute(agent.ctx.get('llm'), selection.route, exec.signal)
         const prompt: ContentBlock[] = [{ type: 'text', text: args.prompt }]
         if (selection?.instructions !== undefined) {
@@ -290,6 +302,7 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
           context,
           provider: context === 'fork' ? config.forkProvider : config.freshProvider,
           ...selection === undefined ? {} : { agentOptions: selection.route },
+          ...selection?.agentPreset === undefined ? {} : { agentPreset: selection.agentPreset.id },
           signal: exec.signal,
         })
         return { member: modelMember(result.member) }
