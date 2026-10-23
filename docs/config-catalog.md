@@ -1293,7 +1293,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-experimental-tool-agent-team`
 
 - `inject`: `agents` · `agentTeams` · `tools` · `systemPrompt`
-- `source`: [`packages/experimental/tool-agent-team/src/index.ts:32`](../packages/experimental/tool-agent-team/src/index.ts)
+- `source`: [`packages/experimental/tool-agent-team/src/index.ts:35`](../packages/experimental/tool-agent-team/src/index.ts)
 
 ```ts config-catalog
 /** Tool routing configuration. */
@@ -1330,6 +1330,11 @@ export interface TeammateRoleConfig {
   readonly reasoningEffort?: string
   /** Text sent to the teammate before the Lead's initial task. */
   readonly instructions?: string
+  /**
+   * Agent Preset that composes a `fresh` teammate of this role instead of the
+   * Lead's preset; it must mount this plugin so the teammate keeps the Team tools.
+   */
+  readonly agentPreset?: string
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-tool-agent-team -->

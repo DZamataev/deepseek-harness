@@ -225,17 +225,17 @@
   en: a640800a38b3c874
   zh: a640800a38b3c874
 /session-persistence-event-catalog/events/team/team-member-log-only:
-  en: 47e0c90393323a76
-  zh: db67cd286da94e6f
+  en: 69d96bb4f5d9d240
+  zh: 01eebb9bbedbfd46
 /session-persistence-event-catalog/events/team/team-message-delivered-log-only:
-  en: 73b0c6f2fcb35ffc
-  zh: 48b9f2c6c65d485a
+  en: 7c88e1c18a84a0fe
+  zh: 5f0018638765e31f
 /session-persistence-event-catalog/events/team/team-message-queued-log-only:
-  en: 4a6d114ba802f637
-  zh: 1807c732b86b2e5c
+  en: 1c1e14d5de8e2e72
+  zh: 29044273bc312035
 /session-persistence-event-catalog/events/team/team-task-log-only:
-  en: f2b947899827af79
-  zh: 6fe60875b94eaeb8
+  en: ce4c6ef8f23069ff
+  zh: afc7dbab432fb953
 /session-persistence-event-catalog/events/todo:
   en: 308d4bb4b6b96e35
   zh: 308d4bb4b6b96e35
@@ -1254,17 +1254,17 @@
   en: d2cb94e536d29a91
   zh: 71a5d404b5fa5fa2
 /session-persistence-event-catalog/resolved-persistence-types/teammessagesnapshot:
-  en: d40c3ddcfbb9a569
-  zh: 3eec4e001de8a506
+  en: bf0569f7168dff47
+  zh: 6ce93c60b1568982
 /session-persistence-event-catalog/resolved-persistence-types/teammessagesource:
-  en: f230ffc204dd8e10
-  zh: 152ab60bc7968aeb
+  en: b3f756a28b9f8411
+  zh: 658ece8ef6d84049
 /session-persistence-event-catalog/resolved-persistence-types/teamtasksnapshot:
-  en: f934b3521b68eefc
-  zh: 2cbdcce3c5716a1a
+  en: dcdf6b3cac8246ba
+  zh: d67ba149714b71ee
 /session-persistence-event-catalog/resolved-persistence-types/teamtaskstatus:
-  en: db35b1d4f96ab1b5
-  zh: fd5243ec8d365504
+  en: d704791a86f3de3f
+  zh: aba92e1c019f4525
 /session-persistence-event-catalog/resolved-persistence-types/textblock:
   en: c5fcd2cdd37ea387
   zh: 9c678fbdea0bf25c
@@ -1875,17 +1875,17 @@
   en: a059891583aad6c3
   zh: 626a9fbf0cf2fae1
 /session-persistence-event-catalog/resolved-persistence-types/member-teamid-version:
-  en: 6668bfb7e08acd69
-  zh: 91eef41711a1f808
+  en: f640aa19eb1f69da
+  zh: f2ba50714f34b106
 /session-persistence-event-catalog/resolved-persistence-types/message-step-turn:
   en: dcaa676f106cfdfd
   zh: e3941fea97c943fb
 /session-persistence-event-catalog/resolved-persistence-types/message-teamid-version:
-  en: ecf616dfe0fab68c
-  zh: 3de59503367df620
+  en: 16f9956b5f0dac7f
+  zh: a16e76d03737d62e
 /session-persistence-event-catalog/resolved-persistence-types/messageid-targetid-teamid-version:
-  en: 3f9267c8bfb9dd40
-  zh: d8af51ba6e5484e8
+  en: 7f2473579a722a86
+  zh: f9cf8a54604fb009
 /session-persistence-event-catalog/resolved-persistence-types/mode-source:
   en: 3028b222670ce5ad
   zh: cae4c9437e560d61
@@ -1917,8 +1917,8 @@
   en: 5360af614fe753e3
   zh: 96427c489cc71de6
 /session-persistence-event-catalog/resolved-persistence-types/task-teamid-version:
-  en: 399348161b23303d
-  zh: 06dec1eebb8fe2e7
+  en: c579fea71a96cd8a
+  zh: d3ebfea75d2f6ce3
 /session-persistence-event-catalog/resolved-persistence-types/todos:
   en: 06e6c1837e2b5d50
   zh: 37cebfe3e41294ec

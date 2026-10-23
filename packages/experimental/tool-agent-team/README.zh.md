@@ -96,6 +96,8 @@ kind: "package-reference"
 
 创建和列表结果为 Lead 与每个 teammate 报告 `llmProvider`、`model`，以及已设置时的 `reasoningEffort`，让成员看到每个成员运行的模型。配置了任一设置时，共享策略增加一句：用自己的工具调用核实跨模型审阅者的结论，并把分歧当作需要调查的信号。
 
+角色还可以指定 `agentPreset`。该角色的 teammate 由这个 Agent Preset 组合，而不是 Lead 的预设，因此 GPT 角色可以使用 Codex 风格的工具和提示词，而 Lead 与其他 teammate 保持各自的组合。只有 `fresh` teammate 接受它；`fork` teammate 继承 Lead 预设，以 `context: "fork"` 选择这类角色会失败。创建 teammate 之前，工具检查该预设已声明、已加载，且包含本插件的已启用行（按模块说明符匹配），因为没有 Team 工具的 teammate 无法向 Lead 报告；任一检查失败都不会消耗 teammate 名字。子 Session 记录这次选择，冷恢复时还原它。Lead 模型不能直接指定预设，只有角色可以携带预设。
+
 ### 成功与失败的表现
 
 `send_message` 在收件箱接收消息后返回 `{ "sent": true }`，不暴露消息 ID。成功不表示接收方已处理消息，也不保证同步刷新到存储；发送失败会作为工具错误报告。当没有其他成员 running 或 provisioning 时，`wait_agent` 会立即返回 `noProgress`，提示调用方先唤醒 teammate；否则它会等待下一次变化，调用方随后重新读取状态。基于过期 revision 的任务编辑会被拒绝，而不是覆盖更新的成果。

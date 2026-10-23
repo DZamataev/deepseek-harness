@@ -22588,7 +22588,7 @@
       "digest": "0bcfaf5566d271028429ac7b562cb59053c9d78b8ae14708c35fac835108d1b1",
       "names": [],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:270"
+        "packages/experimental/agent-team/src/types.ts:283"
       ]
     },
     {
@@ -22978,7 +22978,7 @@
         "packages/experimental/agent-team/src/types.ts#TeamMessageSource"
       ],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:155"
+        "packages/experimental/agent-team/src/types.ts:161"
       ]
     },
     {
@@ -23163,7 +23163,7 @@
         "packages/experimental/agent-team/src/types.ts#TeamMessageSnapshot"
       ],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:146"
+        "packages/experimental/agent-team/src/types.ts:152"
       ]
     },
     {
@@ -23446,7 +23446,7 @@
       "digest": "4137d5639d81f2e9d6047cf489577d3fa38dacf40f489962f88e77e5dd7a05d7",
       "names": [],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:264"
+        "packages/experimental/agent-team/src/types.ts:277"
       ]
     },
     {
@@ -23719,7 +23719,7 @@
         "packages/experimental/agent-team/src/types.ts#TeamTaskSnapshot"
       ],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:86"
+        "packages/experimental/agent-team/src/types.ts:92"
       ]
     },
     {
@@ -24917,7 +24917,7 @@
       "digest": "a40d12070f6f4a124f32fb3cc86e7857554702e32f0eda3080a25c4b9ac9b18c",
       "names": [],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:266"
+        "packages/experimental/agent-team/src/types.ts:279"
       ]
     },
     {
@@ -25186,7 +25186,7 @@
         "packages/experimental/agent-team/src/types.ts#TeamTaskStatus"
       ],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:83"
+        "packages/experimental/agent-team/src/types.ts:89"
       ]
     },
     {
@@ -25867,7 +25867,7 @@
       "digest": "ea08ec1df0c33108fd03345b9af199cf04dea450aa045d3c683f216311403403",
       "names": [],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:268"
+        "packages/experimental/agent-team/src/types.ts:281"
       ]
     },
     {

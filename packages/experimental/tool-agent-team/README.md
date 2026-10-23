@@ -96,6 +96,8 @@ With either setting non-empty, `spawn_teammate` gains optional parameters: `role
 
 Creation and listing rows report `llmProvider`, `model`, and, when set, `reasoningEffort` for the Lead and every teammate, so members see which model each one runs. When either setting is configured, the shared policy adds one sentence: verify a cross-model reviewer's claims with your own tool calls and treat disagreement as a signal to investigate.
 
+A role may also name an `agentPreset`. Its teammates are composed from that Agent Preset instead of the Lead's, so a GPT role can run with Codex-shaped tools and prompt while the Lead and other teammates keep theirs. Only `fresh` teammates accept it; a `fork` teammate inherits the Lead preset, and selecting such a role with `context: "fork"` fails. Before creating the teammate the tool checks that the preset is declared, loaded, and carries an enabled row of this plugin, matched by module specifier, because a teammate without Team tools cannot report to the Lead; each failure leaves the teammate name unused. The child Session records the selection and cold resume restores it. The Lead model cannot name a preset directly; only roles carry one.
+
 ### What success and failure look like
 
 `send_message` returns `{ "sent": true }` after inbox acceptance, without exposing the message ID. Success does not confirm recipient processing or a synchronous storage flush; send failures are reported as tool errors. `wait_agent` returns `noProgress` right away when no other member is running or provisioning, telling the caller to wake a teammate first; otherwise it waits for the next change and the caller re-reads state afterward. Task edits based on an outdated revision are rejected rather than overwriting newer work.
