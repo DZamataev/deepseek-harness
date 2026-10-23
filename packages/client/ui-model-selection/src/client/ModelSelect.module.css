@@ -6,7 +6,8 @@
 /* Figma 313:14108 ToggleButton: 13/20 regular secondary label, 4px gap,
    12px caption chevron; 28px chip height matches the sibling Plan /
    Read-only selects in the same tool row. */
-.trigger {
+.trigger,
+.readout {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -16,16 +17,25 @@
   max-width: 220px;
   max-width: min(360px, 45cqw);
   height: 28px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 400;
+}
+
+/* The recorded subagent route: trigger geometry without chip chrome. */
+.readout {
+  padding: 0 8px;
+  cursor: default;
+}
+
+.trigger {
   padding: 0 4px 0 8px;
   border: none;
   /* Rounded chip chrome, matching the sibling permission trigger. */
   border-radius: var(--dsw-radius-sm);
   outline: none;
   background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 13px;
-  line-height: 20px;
-  font-weight: 400;
   cursor: pointer;
 }
 

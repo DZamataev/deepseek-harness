@@ -254,7 +254,9 @@ function CatalogRows({
           : completed
             ? t('activity.completed')
             : t('activity.inactive')
-        const secondary = [summary?.title, requiresOpening ? t('catalog.migrationRequired') : mode, activity]
+        // The short model ID leads, so a long title truncates before it does.
+        const model = summary?.projectionValues?.modelSelection?.lastUsed?.model
+        const secondary = [model, summary?.title, requiresOpening ? t('catalog.migrationRequired') : mode, activity]
           .filter(value => value !== undefined)
           .join(' · ')
         const totalTokens = tokenTotal(summary?.projectionValues?.tokenUsage)

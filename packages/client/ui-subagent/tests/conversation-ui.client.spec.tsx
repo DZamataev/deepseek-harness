@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { allowAllAccess, makeTranslate, RemoteError, sessionSnapshot } from '@deepseek-ai/dsh-client-test-runtime'
 import type {
-  SessionListState, SessionSummary, SessionSnapshot,
+  SessionListState, SessionProjectionMap, SessionSummary, SessionSnapshot,
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SubagentAddress, SubagentCatalogEntry } from '@deepseek-ai/dsh-subagent/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -12,7 +12,9 @@ import {
   SubagentCatalogAction, SubagentHeaderLineage,
   type SubagentCatalogActionProps, type SubagentHeaderLineageProps,
 } from '../src/client/SubagentHeaderLineage.tsx'
-import { SubagentReadOnlyComposer } from '../src/client/SubagentReadOnlyComposer.tsx'
+import {
+  SubagentReadOnlyComposer, type SubagentReadOnlyComposerProps,
+} from '../src/client/SubagentReadOnlyComposer.tsx'
 import { en, zh } from '../src/client/locales.ts'
 
 afterEach(() => {
@@ -1219,22 +1221,81 @@ describe('SubagentHeaderLineage', () => {
 })
 
 describe('SubagentReadOnlyComposer', () => {
+  type Projected = SessionProjectionMap['modelSelection'] | undefined
+  const projection = (value: Projected): SubagentReadOnlyComposerProps['useProjection'] =>
+    (key: string) => key === 'modelSelection' ? value : undefined
+  const noRoute = projection(undefined)
+
   it('explains the exact missing-parent recovery path', () => {
-    render(<SubagentReadOnlyComposer matched={{ reason: 'parent-unavailable' }} t={t} />)
+    render(<SubagentReadOnlyComposer matched={{ reason: 'parent-unavailable' }} useProjection={noRoute} t={t} />)
     expect(screen.getByRole('status').textContent).toContain('父会话当前不在线')
   })
 
   it('keeps an unknown child read-only until its descriptor is available', () => {
-    render(<SubagentReadOnlyComposer matched={{ reason: 'unknown' }} t={t} />)
+    render(<SubagentReadOnlyComposer matched={{ reason: 'unknown' }} useProjection={noRoute} t={t} />)
     expect(screen.getByRole('status').textContent).toContain('读取子会话后才能确定是否可继续')
   })
 
   it('explains that one-shot histories never accept follow-ups', () => {
-    render(<SubagentReadOnlyComposer matched={{ reason: 'one-shot' }} t={t} />)
+    render(<SubagentReadOnlyComposer matched={{ reason: 'one-shot' }} useProjection={noRoute} t={t} />)
     expect(screen.getByRole('status').textContent).toContain('一次性任务不支持后续消息')
+    expect(screen.getByRole('status').textContent).not.toContain('模型')
+  })
+
+  it('names the recorded model route with its reasoning effort', () => {
+    render(<SubagentReadOnlyComposer
+      matched={{ reason: 'one-shot' }}
+      useProjection={projection({
+        lastUsed: { provider: 'anthropic', model: 'claude-opus-5', reasoningEffort: 'high' },
+        next: null,
+      })}
+      t={t}
+    />)
+    expect(screen.getByText('模型：claude-opus-5 · high')).toBeTruthy()
+  })
+
+  it('names a recorded model route that carries no reasoning effort', () => {
+    render(<SubagentReadOnlyComposer
+      matched={{ reason: 'parent-unavailable' }}
+      useProjection={projection({ lastUsed: { provider: 'deepseek', model: 'deepseek-v4-flash' }, next: null })}
+      t={t}
+    />)
+    expect(screen.getByText('模型：deepseek-v4-flash')).toBeTruthy()
+  })
+
+  it('names no model before the first recorded request', () => {
+    render(<SubagentReadOnlyComposer
+      matched={{ reason: 'one-shot' }}
+      useProjection={projection({ lastUsed: null, next: null })}
+      t={t}
+    />)
+    expect(screen.getByRole('status').textContent).not.toContain('模型')
   })
 })
 
+
+it('leads a catalog row summary with the model of its latest recorded request', () => {
+  const input = props(catalog(), {}, {
+    [CHILD]: {
+      ...summary(CHILD, 1),
+      title: 'Scanning files',
+      running: true,
+      projectionValues: {
+        modelSelection: {
+          lastUsed: { provider: 'anthropic', model: 'claude-opus-5', reasoningEffort: 'high' },
+          next: null,
+        },
+      },
+    },
+    ['child-2' as SessionId]: summary('child-2' as SessionId, 1),
+  })
+  render(<HeaderCatalog {...input} />)
+  hoverCatalog(screen.getByRole('button', { name: /子智能体/ }))
+  const worker = screen.getByRole('treeitem', { name: /worker/ })
+  expect(within(worker).getByText('claude-opus-5 · Scanning files · 可继续 · 正在运行')).toBeTruthy()
+  const reviewer = screen.getByRole('treeitem', { name: /reviewer/ })
+  expect(reviewer.getAttribute('aria-label')).not.toContain('claude')
+})
 
 it('shows external membership without an execution status or child Session navigation', () => {
   const input = props(catalog({ entries: [

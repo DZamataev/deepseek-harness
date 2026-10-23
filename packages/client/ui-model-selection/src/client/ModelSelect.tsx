@@ -23,7 +23,9 @@
  * Retry remains the catalog-load surface. While the directory's pending
  * selection is unsettled, the trigger shows a spinner in place of its
  * chevron, and each row whose value that selection carries shows one in place
- * of its check mark.
+ * of its check mark. An addressed subagent Session renders a non-interactive
+ * readout of its latest recorded route instead, and nothing before its first
+ * request.
  */
 import { MenuGroup, MenuSurface, observeStickyMenuGroups } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
@@ -245,7 +247,41 @@ export function ModelSelect(
     }
   }, [available, open, pane, state, query])
 
-  if (!available) return null
+  const renderModelLabel = (
+    provider: ModelLabelOwner['provider'], model: ModelLabelOwner['model'],
+    placement: ModelLabelOwner['placement'], selected: boolean,
+  ) => (
+    <span data-provider-id={provider.id} data-model-id={model.id}>
+      {renderSlot('conversation.input.model.label', {
+        provider, model, placement, selected,
+      }, { fallback: model.name })}
+    </span>
+  )
+
+  // An addressed subagent cannot change its route; it shows the recorded one.
+  if (!available) {
+    if (state.current === null) return null
+    const readoutModel = currentChoice?.model.name ?? state.current.model
+    const readoutEffort = currentChoice === undefined ? state.retainedEffort : effortLabel
+    return (
+      <div
+        className={css.readout}
+        role="note"
+        aria-label={readoutEffort === undefined
+          ? t('readout.aria', { model: readoutModel })
+          : t('readout.ariaEffort', { model: readoutModel, effort: readoutEffort })}
+        title={readoutEffort === undefined ? readoutModel : `${readoutModel} · ${readoutEffort}`}
+      >
+        <IconDataOutlineRegular className={css.triggerIcon} size={16} />
+        <span className={css.triggerLabel}>
+          {currentChoice === undefined
+            ? readoutModel
+            : renderModelLabel(currentChoice.group.provider, currentChoice.model, 'trigger', true)}
+        </span>
+        {readoutEffort !== undefined && <span className={css.triggerEffort}>{readoutEffort}</span>}
+      </div>
+    )
+  }
 
   const show = (): void => {
     setSelectionFocus(false)
@@ -432,16 +468,6 @@ export function ModelSelect(
       : effortLabel === undefined
         ? t('trigger.aria', { model: modelLabel })
         : t('trigger.ariaEffort', { model: modelLabel, effort: effortLabel })
-  const renderModelLabel = (
-    provider: ModelLabelOwner['provider'], model: ModelLabelOwner['model'],
-    placement: ModelLabelOwner['placement'], selected: boolean,
-  ) => (
-    <span data-provider-id={provider.id} data-model-id={model.id}>
-      {renderSlot('conversation.input.model.label', {
-        provider, model, placement, selected,
-      }, { fallback: model.name })}
-    </span>
-  )
   let itemIndex = 0
   let modelIndex = 0
   const itemRef = () => {
