@@ -61,7 +61,7 @@ export const TeammateRolesSchema: z<Readonly<Record<string, TeammateRoleConfig>>
 export interface TeamRoutes {
   /** Roles by name, in configuration order. */
   readonly roles: ReadonlyMap<string, TeammateRoleConfig>
-  /** Explicitly selectable routes: configured models, then role routes not already listed. */
+  /** Explicitly selectable routes: configured models, then routes of roles without an Agent Preset not already listed. */
   readonly allowed: readonly TeammateModelRoute[]
 }
 
@@ -95,7 +95,7 @@ function requireText(value: string | undefined, field: string): void {
  * load fails before any tool is registered.
  * @param models - Configured exact routes.
  * @param roles - Configured roles by name.
- * @returns the validated roles and the union of allowed routes.
+ * @returns the validated roles and the allowed routes: configured models plus routes of roles without `agentPreset`.
  */
 export function resolveTeamRoutes(
   models: readonly TeammateModelRoute[],
@@ -122,7 +122,9 @@ export function resolveTeamRoutes(
       requireText(role[field], `roles.${name}.${field}`)
     }
     validated.set(name, role)
-    if (!seen.has(key(role))) {
+    // A preset role's route stays selectable only through the role, so a raw
+    // provider/model choice cannot start that model without the role's preset.
+    if (role.agentPreset === undefined && !seen.has(key(role))) {
       seen.add(key(role))
       allowed.push({ provider: role.provider, model: role.model })
     }
@@ -136,7 +138,7 @@ export function resolveTeamRoutes(
  * @returns whether any role or allowed route is configured.
  */
 export function routeSelectionEnabled(routes: TeamRoutes): boolean {
-  return routes.allowed.length > 0
+  return routes.allowed.length > 0 || routes.roles.size > 0
 }
 
 /** Render routes as `provider/model` for model-facing text. */

@@ -90,6 +90,18 @@ describe('selectTeammateRoute', () => {
       .toEqual({ route: { provider: 'codex-lb', model: 'gpt-6-sol' } })
   })
 
+  it('keeps a preset role route selectable only through the role unless models lists it', () => {
+    const coder = { ...REVIEWER, model: 'gpt-6-sol', agentPreset: 'team-codex' }
+    const routes = resolveTeamRoutes([{ provider: 'anthropic', model: 'claude-sonnet-5-5' }], { 'gpt-coder': coder })
+    expect(routes.allowed).toEqual([{ provider: 'anthropic', model: 'claude-sonnet-5-5' }])
+    expect(routeSelectionEnabled(routes)).toBe(true)
+    expect(() => selectTeammateRoute(routes, { provider: 'codex-lb', model: 'gpt-6-sol' }))
+      .toThrow('teammate LLM route "codex-lb/gpt-6-sol" is not allowed')
+    expect(selectTeammateRoute(routes, { role: 'gpt-coder' })?.route).toMatchObject({ provider: 'codex-lb', model: 'gpt-6-sol' })
+    const shared = resolveTeamRoutes([], { 'gpt-coder': coder, 'gpt-plain': { description: 'Plain', provider: 'codex-lb', model: 'gpt-6-sol' } })
+    expect(shared.allowed).toEqual([{ provider: 'codex-lb', model: 'gpt-6-sol' }])
+  })
+
   it('carries a role preset with its role name', () => {
     const routes = resolveTeamRoutes([], { 'gpt-reviewer': { ...REVIEWER, agentPreset: 'team-codex' } })
     expect(selectTeammateRoute(routes, { role: 'gpt-reviewer' })).toEqual({

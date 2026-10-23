@@ -67,7 +67,7 @@ kind: "package-reference"
 
 ### 让 teammate 使用其他模型
 
-两个可选设置让 Lead 在另一条 LLM 路由上启动 teammate。`models` 列出 Lead 可以选择的精确 `provider`/`model` 路由；`roles` 定义具名预设，包含描述、路由、可选的 `reasoningEffort` 和可选的 `instructions`。角色的路由无需在 `models` 中重复即被允许。这里的 provider id 指 profile 中注册的 LLM 提供方，而不是 subagent 提供方 `freshProvider` 与 `forkProvider`。在另一条路由上的 `fork` teammate 会通过该模型重放 Lead 已完成的轮次，因此 Lead 历史必须能放入该 teammate 模型的上下文窗口。
+两个可选设置让 Lead 在另一条 LLM 路由上启动 teammate。`models` 列出 Lead 可以选择的精确 `provider`/`model` 路由；`roles` 定义具名预设，包含描述、路由、可选的 `reasoningEffort` 和可选的 `instructions`。角色的路由无需在 `models` 中重复即被允许，除非该角色指定了 `agentPreset`。这里的 provider id 指 profile 中注册的 LLM 提供方，而不是 subagent 提供方 `freshProvider` 与 `forkProvider`。在另一条路由上的 `fork` teammate 会通过该模型重放 Lead 已完成的轮次，因此 Lead 历史必须能放入该 teammate 模型的上下文窗口。
 
 ```yaml
 - id: tool-agent-team
@@ -96,7 +96,7 @@ kind: "package-reference"
 
 创建和列表结果为 Lead 与每个 teammate 报告 `llmProvider`、`model`，以及已设置时的 `reasoningEffort`，让成员看到每个成员运行的模型。配置了任一设置时，共享策略增加一句：用自己的工具调用核实跨模型审阅者的结论，并把分歧当作需要调查的信号。
 
-角色还可以指定 `agentPreset`。该角色的 teammate 由这个 Agent Preset 组合，而不是 Lead 的预设，因此 GPT 角色可以使用 Codex 风格的工具和提示词，而 Lead 与其他 teammate 保持各自的组合。只有 `fresh` teammate 接受它；`fork` teammate 继承 Lead 预设，以 `context: "fork"` 选择这类角色会失败。创建 teammate 之前，工具检查该预设已声明、已加载，且包含本插件的已启用行（按模块说明符匹配），因为没有 Team 工具的 teammate 无法向 Lead 报告；任一检查失败都不会消耗 teammate 名字。子 Session 记录这次选择，冷恢复时还原它。Lead 模型不能直接指定预设，只有角色可以携带预设。
+角色还可以指定 `agentPreset`。该角色的 teammate 由这个 Agent Preset 组合，而不是 Lead 的预设，因此 GPT 角色可以使用 Codex 风格的工具和提示词，而 Lead 与其他 teammate 保持各自的组合。只有 `fresh` teammate 接受它；`fork` teammate 继承 Lead 预设，以 `context: "fork"` 选择这类角色会失败。创建 teammate 之前，工具检查该预设已声明、已加载，且包含本插件的已启用行（按模块说明符匹配），因为没有 Team 工具的 teammate 无法向 Lead 报告；任一检查失败都不会消耗 teammate 名字。子 Session 记录这次选择，冷恢复时还原它。Lead 模型不能直接指定预设，只有角色可以携带预设。带预设角色的路由不会被隐式允许为直接的 `provider`/`model` 选择，因此只有 `models` 列出该路由时，这个模型才能不带角色预设启动；如果只配置了带预设的角色，`spawn_teammate` 只提供 `role` 和 `reasoning_effort`，不提供 `provider` 和 `model`。
 
 ### 成功与失败的表现
 

@@ -1062,6 +1062,21 @@ describe('dsh-tool-team inside an Agent Preset', () => {
     expect(warnings).toEqual([])
   })
 
+  it('offers only roles when every configured route belongs to a preset role', async () => {
+    const { ctx } = await presetSetup()
+    await ctx.agentPresets.register(pair(PRESET_ROLES))
+    const lead = await rootOn(ctx, 'pair-lead', 'pair')
+    const tool = ctx.tools.get('spawn_teammate', scopeOf(lead.ctx))
+    expect(Object.keys((tool?.parameters as { properties: object }).properties))
+      .toEqual(['name', 'description', 'prompt', 'context', 'role', 'reasoning_effort'])
+    const spawnTeammate = vi.spyOn(ctx.agentTeams, 'spawnTeammate')
+    const rejected = await execute(ctx, lead, 'spawn_teammate', {
+      name: 'coder', description: 'implement', prompt: 'wait', provider: 'mock', model: 'mock',
+    })
+    expect(text(rejected)).toContain('teammate LLM route "mock/mock" is not allowed')
+    expect(spawnTeammate).not.toHaveBeenCalled()
+  })
+
   it.each([
     ['a fork teammate', { role: 'codex-worker', context: 'fork' }, 'a fork teammate inherits the Lead preset'],
     ['a preset without Team tools', { role: 'bare-worker' }, 'agent preset "bare", which does not mount tool-agent-team'],
