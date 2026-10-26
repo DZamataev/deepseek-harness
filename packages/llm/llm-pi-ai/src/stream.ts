@@ -47,6 +47,10 @@ function classifyPiAiError(message: string): string {
   // same request cannot succeed, so it is invalid, not transient.
   if (/\b413\b|failed to buffer the request body:\s*length limit exceeded|payload too large|request body too large/i.test(message)) return 'INVALID_REQUEST'
   if (/\b400\b|invalid.?request/i.test(message)) return 'INVALID_REQUEST'
+  // Anthropic reports overload and internal failures as an in-stream SSE
+  // `error` event after HTTP 200; pi-ai forwards only its raw JSON data, which
+  // names the error type but carries no status code.
+  if (/\b(?:overloaded_error|api_error)\b/.test(message)) return 'SERVER'
   if (/\b5\d\d\b/.test(message)) return 'SERVER'
   if (/\btime(?:d)?\s*out\b|timeout/i.test(message)) return 'TIMEOUT'
   // A stream truncated before the provider's terminal event: each pi-ai provider
