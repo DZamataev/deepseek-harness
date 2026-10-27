@@ -956,6 +956,21 @@ describe('mapStopReason / mapUsage', () => {
       .toMatchObject({ kind: 'error', failure: { code: 'TRANSPORT' } })
   })
 
+  // An Anthropic in-stream `event: error` arrives after HTTP 200, so pi-ai
+  // forwards only the raw SSE data with no status code to match.
+  it.each([
+    '{"type":"error","error":{"details":null,"type":"overloaded_error","message":"Overloaded"},"request_id":"req_011CgL7Veh3Uo4cD5h7Z6sZP"}',
+    '{"type":"error","error":{"type":"api_error","message":"Internal server error"}}',
+  ])('maps an Anthropic in-stream server error %j to SERVER', (errorMessage) => {
+    expect(mapStopReason(assistant({ stopReason: 'error', errorMessage })))
+      .toMatchObject({ kind: 'error', failure: { code: 'SERVER' } })
+  })
+
+  it('keeps prose that only mentions overload unclassified', () => {
+    expect(mapStopReason(assistant({ stopReason: 'error', errorMessage: 'operator overloaded for this type' })))
+      .toMatchObject({ kind: 'error', failure: { code: 'PI_AI_ERROR' } })
+  })
+
   it('uses pi-ai provider-specific overflow classification without losing rate-limit exclusions', () => {
     expect(mapStopReason(assistant({
       stopReason: 'error',
