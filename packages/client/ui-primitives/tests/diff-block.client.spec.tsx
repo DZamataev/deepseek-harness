@@ -90,6 +90,21 @@ describe('DiffBlock structure', () => {
     const { container } = render(<DiffBlock diffs={[{ path: 'a.ts', oldText: null, newText: 'x\n\ny' }]} />)
     expect(container.querySelectorAll('[class*="_add_"]').length).toBe(3)
   })
+
+  it('draws a truncated hunk as a notice under its file and counts nothing for it', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const diffs: DiffHunk[] = [
+      { path: 'a.ts', oldText: 'x', newText: 'y' },
+      { path: 'a.ts', oldText: '', newText: '', truncated: true },
+      { path: 'big.ts', oldText: null, newText: '', truncated: true },
+    ]
+    const { container } = render(<DiffBlock diffs={diffs} />)
+    expect(bodyRows(container)).toEqual(['a.ts', 'x', 'y', '⋯', '差异过大，无法显示', 'big.ts', '差异过大，无法显示'])
+    expect(diffTotals(diffs)).toEqual({ added: 1, removed: 1 })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '复制' })) })
+    expect(writeText).toHaveBeenCalledWith(['a.ts', '- x', '+ y', '⋯', '差异过大，无法显示', 'big.ts', '差异过大，无法显示'].join('\n'))
+  })
 })
 
 describe('DiffBlock local changes', () => {

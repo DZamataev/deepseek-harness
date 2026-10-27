@@ -59,6 +59,9 @@ const TOOL_VARIANTS: Record<string, ToolRowVariant> = {
   glob: 'search',
   write: 'write',
   edit: 'edit',
+  // The external `@local/dsh-apply-patch` tool edits several files per call:
+  // the edit row family without a single openable path (it has no `file_path`).
+  apply_patch: 'edit',
   run_code: 'code',
   cordis_package_inspect: 'read',
   cordis_runtime_inspect: 'read',
@@ -80,6 +83,7 @@ const TOOL_TITLE_KEYS: Record<string, ToolTitleKey> = {
   cordis_undefine: 'tool.title.removeCordis',
   pwsh: 'tool.title.pwsh',
   read_image: 'tool.title.readImage',
+  apply_patch: 'tool.title.applyPatch',
   todo_write: 'todo.rowTitle',
   ask_user_question: 'ask.rowTitle',
   create_goal: 'tool.title.createGoal',
@@ -264,6 +268,50 @@ function argumentSummary(
   return { summary: description === undefined ? '' : firstLine(description), filePath: undefined }
 }
 
+/** Codex patch file headers; `Move to` renames the file named just before it. */
+const CODEX_FILE_HEADER = /^\*\*\* (Add File|Update File|Delete File|Move to): (.+)$/u
+/** Unified diff file headers; the `---` name stands in for a deleted file's `+++ /dev/null`. */
+const UNIFIED_FILE_HEADER = /^(---|\+\+\+) (.+)$/u
+
+/** One header name without a trailing timestamp or whitespace and without git's `a/`/`b/` prefix. */
+function unifiedName(name: string): string {
+  return name.replace(/\t.*$/su, '').trimEnd().replace(/^[ab]\//u, '')
+}
+
+/** The files a patch names in its headers, in order; not a patch parser, so hunk bodies are not read as such. */
+function patchFiles(input: string): string[] {
+  const codex = /^\*\*\* Begin Patch\s*$/mu.test(input)
+  const files: string[] = []
+  let removed: string | undefined
+  for (const line of input.split('\n')) {
+    if (codex) {
+      const [, operation, path = ''] = CODEX_FILE_HEADER.exec(line.trimEnd()) ?? []
+      if (operation === undefined) continue
+      if (operation === 'Move to') files.pop()
+      files.push(path)
+      continue
+    }
+    const [, side, header = ''] = UNIFIED_FILE_HEADER.exec(line.trimEnd()) ?? []
+    if (side === undefined) continue
+    const name = unifiedName(header)
+    if (side === '---') removed = name
+    else files.push(name === '/dev/null' && removed !== undefined ? removed : name)
+  }
+  return [...new Set(files)]
+}
+
+/**
+ * List the files a complete patch-shaped `input` argument names, for patch
+ * tools without a path argument.
+ * @returns comma-separated display paths, or empty while the input streams or names no file.
+ */
+function patchSummary(args: ToolArgs, cwd?: string, home?: string): string {
+  if (!args.complete('input')) return ''
+  const input = args.text('input')
+  if (input === undefined) return ''
+  return patchFiles(input).map(path => abbreviateHomePath(relativizeToCwd(path, cwd), home)).join(', ')
+}
+
 function deriveFilePath(variant: ToolRowVariant, argsRaw: string): string | undefined {
   if (!FILE_PATH_VARIANTS.has(variant)) return undefined
   const parsed = parseArgs(argsRaw)
@@ -305,6 +353,7 @@ export function toolRowModel(toolName: string, block: ToolCallBlock, cwd?: strin
   const done = 'kind' in block
   const argsRaw = done ? block.call?.argsRaw ?? '' : block.phase === 'start' ? block.argsRaw : null
   const primary = argumentSummary(variant, block.args, cwd, home)
+  const lead = primary.summary !== '' ? primary.summary : patchSummary(block.args, cwd, home)
   const argumentPath = primary.filePath ?? (argsRaw === null ? undefined : deriveFilePath(variant, argsRaw))
   const recordedPath = done ? recordedAbsolutePath(block.meta, 'path') : undefined
   const canUseArgumentPath = argumentPath !== undefined
@@ -315,7 +364,7 @@ export function toolRowModel(toolName: string, block: ToolCallBlock, cwd?: strin
     : block.error?.code === 'interrupted' ? 'stopped'
       : block.isError ? 'error' : 'ok'
   // The argument view serves every stage; the raw text is the fallback when it carries nothing useful.
-  const base = primary.summary !== '' || argsRaw === null ? primary.summary
+  const base = lead !== '' || argsRaw === null ? lead
     : argsRaw === '' ? block.callId
       : abbreviateHomePath(relativizeToCwd(deriveSummary(variant, argsRaw), cwd), home)
   const summary = [titleKey === 'tool.title.generic' ? toolName : '', base].filter(Boolean).join(' · ')

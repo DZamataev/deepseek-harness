@@ -37,7 +37,7 @@ export function GenericToolCard({ toolName, block, cwd, home, openFile, inspect,
     : localizeAutoReviewDenial(model.autoReviewDenial, t)
   const terminal = terminalCardModel(block, cwd)
   const read = readCardModel(block, cwd, home)
-  const diff = diffCardModel(block)
+  const diff = diffCardModel(block, cwd, home)
   const search = searchCardModel(block)
   const web = webCardModel(block)
   // A failing exit status is the terminal card's own error signal (the call
@@ -55,6 +55,7 @@ export function GenericToolCard({ toolName, block, cwd, home, openFile, inspect,
       icon={VARIANT_ICONS[model.variant]}
       title={t(model.titleKey)}
       summary={model.summary}
+      summarySuffix={diff?.dryRun === true ? t('diff.dryRun') : undefined}
       // Single-file tools never expose an args body — the path link is the only
       // args interaction. A card is not an args body: a read/write/edit row is
       // single-file AND carries a card, so the card expands under the path link.

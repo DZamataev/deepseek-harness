@@ -22,6 +22,8 @@ export interface DiffHunk {
   oldText: string | null
   /** Content after the change, including any shared context. */
   newText: string
+  /** The producer omitted this hunk's texts as too large; a notice row replaces its lines. */
+  truncated?: boolean | undefined
 }
 
 export interface DiffBlockProps {
@@ -43,11 +45,13 @@ export interface DiffBlockLabels extends CodeToolbarLabels {
   expandAria: (hidden: number) => string
   collapse: string
   expand: (hidden: number) => string
+  /** Notice drawn in place of a truncated hunk's lines. */
+  tooLarge: string
 }
 
 /** A single rendered body line and its role, so the height cap slices a flat list. */
 interface DiffRow {
-  kind: 'path' | 'del' | 'add' | 'context' | 'gap'
+  kind: 'path' | 'del' | 'add' | 'context' | 'gap' | 'notice'
   text: string
 }
 
@@ -64,6 +68,7 @@ const ROW_CLASS: Record<DiffRow['kind'], string | undefined> = {
   add: css.add,
   context: css.context,
   gap: css.gap,
+  notice: css.gap,
 }
 
 /** Bound synchronous edit-graph search; one replacement consumes two edits. */
@@ -82,7 +87,7 @@ function localHunks(diff: DiffHunk) {
 /**
  * Count displayed additions and deletions. Exact patches exclude shared context;
  * comparisons exceeding the edit limit count both complete fragments as replaced.
- * Text follows {@link contentLines}'s terminator rule.
+ * Text follows {@link contentLines}'s terminator rule; truncated hunks count nothing.
  * @param diffs - the hunks to count.
  * @returns the +/- totals for tool summaries.
  */
@@ -90,6 +95,7 @@ export function diffTotals(diffs: DiffHunk[]): { added: number; removed: number 
   let added = 0
   let removed = 0
   for (const diff of diffs) {
+    if (diff.truncated === true) continue
     for (const hunk of localHunks(diff)) {
       for (const line of hunk.lines) {
         if (line.startsWith('+')) added++
@@ -103,17 +109,23 @@ export function diffTotals(diffs: DiffHunk[]): { added: number; removed: number 
 /**
  * Flatten local patches into rows.
  * A path header opens each new file. A `⋯` gap separates consecutive same-file
- * fragments and distant patches within a fragment.
+ * fragments and distant patches within a fragment. A truncated hunk draws one
+ * notice row instead of its lines.
  * @param diffs - the hunks to render.
+ * @param tooLarge - the localized truncated-hunk notice.
  * @returns the body rows.
  */
-function buildRows(diffs: DiffHunk[]): DiffRow[] {
+function buildRows(diffs: DiffHunk[], tooLarge: string): DiffRow[] {
   const rows: DiffRow[] = []
   let prevPath: string | undefined
   for (const diff of diffs) {
     if (diff.path !== prevPath) rows.push({ kind: 'path', text: diff.path })
     else rows.push({ kind: 'gap', text: '⋯' })
     prevPath = diff.path
+    if (diff.truncated === true) {
+      rows.push({ kind: 'notice', text: tooLarge })
+      continue
+    }
     for (const [index, hunk] of localHunks(diff).entries()) {
       if (index > 0) rows.push({ kind: 'gap', text: '⋯' })
       for (const line of hunk.lines) {
@@ -142,7 +154,7 @@ function contentLines(text: string): string[] {
 
 /**
  * Copy the full local diff, including folded rows: removed/added lines have
- * `- `/`+ ` prefixes, context has two spaces, and paths and gaps stay verbatim.
+ * `- `/`+ ` prefixes, context has two spaces, and paths, gaps, and notices stay verbatim.
  * @param rows - the flattened body rows.
  * @returns the diff as plain text.
  */
@@ -154,6 +166,7 @@ function copyText(rows: DiffRow[]): string {
       case 'context': return `  ${row.text}`
       case 'path': return row.text
       case 'gap': return row.text
+      case 'notice': return row.text
       /* v8 ignore next -- closed-union backstop; only reached if a row kind is forged */
       default: return assertNever(row.kind)
     }
@@ -166,7 +179,7 @@ function copyText(rows: DiffRow[]): string {
  * @returns the diff block element.
  */
 export function DiffBlock({ diffs, labels, maxLines = DEFAULT_DIFF_MAX_LINES, className }: DiffBlockProps) {
-  const rows = useMemo(() => buildRows(diffs), [diffs])
+  const rows = useMemo(() => buildRows(diffs, labels.tooLarge), [diffs, labels.tooLarge])
   const [expanded, setExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
   const [wrapped, setWrapped] = useState(false)
