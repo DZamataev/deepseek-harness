@@ -270,32 +270,85 @@ function argumentSummary(
 
 /** Codex patch file headers; `Move to` renames the file named just before it. */
 const CODEX_FILE_HEADER = /^\*\*\* (Add File|Update File|Delete File|Move to): (.+)$/u
-/** Unified diff file headers; the `---` name stands in for a deleted file's `+++ /dev/null`. */
-const UNIFIED_FILE_HEADER = /^(---|\+\+\+) (.+)$/u
+/** Unified hunk header; an omitted count means one line. */
+const HUNK_HEADER = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/u
+/** Single-character C escapes git writes inside quoted names. */
+const C_ESCAPES: Readonly<Record<string, number>> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, '\\': 92 }
 
-/** One header name without a trailing timestamp or whitespace and without git's `a/`/`b/` prefix. */
-function unifiedName(name: string): string {
-  return name.replace(/\t.*$/su, '').trimEnd().replace(/^[ab]\//u, '')
+/** Decode git's C-style quoted name (`"b/a\tb\303\251"`); `undefined` when the quoting is malformed. */
+function unquoteName(quoted: string): string | undefined {
+  const chars = Array.from(quoted)
+  const bytes: number[] = []
+  const encoder = new TextEncoder()
+  for (let i = 1; i < chars.length; i++) {
+    const char = chars[i] ?? ''
+    if (char === '"') {
+      try {
+        return new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array(bytes))
+      } catch (_invalidUtf8) {
+        // The octal escapes do not form UTF-8; the caller shows the raw text.
+        return undefined
+      }
+    }
+    if (char !== '\\') {
+      bytes.push(...encoder.encode(char))
+      continue
+    }
+    const octal = /^[0-3][0-7]{2}$/u.exec(chars.slice(i + 1, i + 4).join(''))?.[0]
+    const escaped = octal === undefined ? C_ESCAPES[chars[i + 1] ?? ''] : Number.parseInt(octal, 8)
+    if (escaped === undefined) return undefined
+    bytes.push(escaped)
+    i += octal === undefined ? 1 : 3
+  }
+  return undefined
 }
 
-/** The files a patch names in its headers, in order; not a patch parser, so hunk bodies are not read as such. */
+/** One header name without a trailing timestamp or whitespace and without git's quoting and `a/`/`b/` prefix. */
+function unifiedName(name: string): string {
+  const unquoted = name.startsWith('"') ? unquoteName(name) : undefined
+  return (unquoted ?? name.replace(/\t.*$/su, '').trimEnd()).replace(/^[ab]\//u, '')
+}
+
+/** The files a patch names in its headers, in order; hunk bodies are skipped by their header line counts, not parsed. */
 function patchFiles(input: string): string[] {
-  const codex = /^\*\*\* Begin Patch\s*$/mu.test(input)
+  const lines = input.split(/\r?\n/u)
   const files: string[] = []
-  let removed: string | undefined
-  for (const line of input.split('\n')) {
-    if (codex) {
+  if (/^\*\*\* Begin Patch\s*$/mu.test(input)) {
+    for (const line of lines) {
       const [, operation, path = ''] = CODEX_FILE_HEADER.exec(line.trimEnd()) ?? []
       if (operation === undefined) continue
       if (operation === 'Move to') files.pop()
       files.push(path)
+    }
+    return [...new Set(files)]
+  }
+  // Remaining old/new hunk lines; `loose` follows a hunk header without counts, which ends only at the next file.
+  let oldLines = 0
+  let newLines = 0
+  let loose = false
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? ''
+    if (oldLines > 0 || newLines > 0) {
+      if (!line.startsWith('+') && !line.startsWith('\\')) oldLines--
+      if (!line.startsWith('-') && !line.startsWith('\\')) newLines--
       continue
     }
-    const [, side, header = ''] = UNIFIED_FILE_HEADER.exec(line.trimEnd()) ?? []
-    if (side === undefined) continue
-    const name = unifiedName(header)
-    if (side === '---') removed = name
-    else files.push(name === '/dev/null' && removed !== undefined ? removed : name)
+    if (line.startsWith('diff --git ')) loose = false
+    const hunk = HUNK_HEADER.exec(line)
+    if (hunk !== null) {
+      oldLines = Number(hunk[1] ?? 1)
+      newLines = Number(hunk[2] ?? 1)
+      continue
+    }
+    if (line.startsWith('@@')) loose = true
+    const next = lines[i + 1] ?? ''
+    if (!line.startsWith('--- ') || !next.startsWith('+++ ')) continue
+    if (loose && !(lines[i + 2] ?? '').startsWith('@@')) continue
+    loose = false
+    const removed = unifiedName(line.slice(4))
+    const added = unifiedName(next.slice(4))
+    files.push(added === '/dev/null' ? removed : added)
+    i++
   }
   return [...new Set(files)]
 }
