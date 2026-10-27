@@ -458,6 +458,33 @@ describe('recorded diffs of other tools (apply_patch)', () => {
       .container.querySelector('[data-disclosure-row]')?.textContent).toContain('d.js, e.js')
   })
 
+  const patchRow = (input: string): string | undefined => {
+    cleanup()
+    return card(running({ name: 'apply_patch', argsRaw: JSON.stringify({ input }) }))
+      .container.querySelector('[data-disclosure-row]')?.textContent ?? undefined
+  }
+
+  it('does not name files from hunk lines that look like headers', () => {
+    const unified = '--- a/a.txt\n+++ b/a.txt\n@@ -1,2 +1,3 @@\n-- old.txt\n++ fake.txt\n+++ fake.txt\n x\n'
+    expect(patchRow(unified)).toMatch(/a\.txt$/u)
+    const loose = 'diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@\n--- gone.txt\n+++ fake.txt\n--- a/b.txt\n+++ b/b.txt\n@@ -1 +1 @@\n-x\n+y\n'
+    expect(patchRow(loose)).toMatch(/a\.txt, b\.txt$/u)
+    const codex = '*** Begin Patch\n*** Add File: a.txt\n+*** Add File: fake.txt\n*** End Patch'
+    expect(patchRow(codex)).toMatch(/a\.txt$/u)
+  })
+
+  it('decodes quoted unified names, keeps malformed ones raw, and reads CRLF patches', () => {
+    const quoted = '--- "a/with space.txt"\n+++ "b/with space.txt"\t2026-10-27\n@@ -1 +1 @@\n-x\n+y\n'
+      + '--- /dev/null\n+++ "b/caf\\303\\251 \\"q\\".txt"\n@@ -0,0 +1 @@\n+z\n'
+      + '--- "a/bad\\377.txt"\n+++ "b/bad\\377.txt"\n@@ -1 +1 @@\n-x\n+y\n'
+    expect(patchRow(quoted)).toMatch(/with space\.txt, café "q"\.txt, "b\/bad\\377\.txt"$/u)
+    const malformed = '--- "a/x\\q.txt"\n+++ "b/x\\q.txt"\n@@ -1 +1 @@\n-x\n\\ No newline at end of file\n+y\n'
+      + '--- "a/open.txt\n+++ "b/open.txt\n@@ -1 +1 @@\n-x\n+y\n'
+    expect(patchRow(malformed)).toMatch(/"b\/x\\q\.txt", "b\/open\.txt$/u)
+    const crlf = '--- a/a.txt\r\n+++ b/a.txt\r\n@@ -1 +1 @@\r\n-x\r\n+++ fake.txt\r\n--- a/b.txt\r\n+++ b/b.txt\r\n@@ -1 +1 @@\r\n-x\r\n+y\r\n'
+    expect(patchRow(crlf)).toMatch(/a\.txt, b\.txt$/u)
+  })
+
   it('keeps the error text of a failed patch', () => {
     const view = card(patch({
       isError: true,
