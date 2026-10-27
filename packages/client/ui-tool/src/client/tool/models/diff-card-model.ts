@@ -1,5 +1,6 @@
 /** Pure diff-card derivation from raw file-mutation calls and result metadata. @module */
 import type { DiffBlockProps, DiffHunk } from '@deepseek-ai/dsh-client-ui-primitives'
+import { abbreviateHomePath, relativizeToCwd } from '@deepseek-ai/dsh-util-workspace-path'
 import type { ToolCallBlock } from './tool-call-model.ts'
 import { parsedToolCall } from './raw-tool-call.ts'
 import { recordedAbsolutePath } from './recorded-path.ts'
@@ -19,10 +20,13 @@ export interface DiffCardModel {
    * neighbouring field into it.
    */
   card: Pick<DiffBlockProps, 'diffs'>
+  /** Present when the call only checked its change (`dry_run: true`), so the card shows what would change. */
+  dryRun?: true
 }
 
 /**
- * Narrow opaque result metadata's `diffs` to well-formed hunks.
+ * Narrow opaque result metadata's `diffs` to well-formed hunks. A hunk may
+ * carry `truncated: true`, which the card draws as a too-large notice.
  * @param diffs - the metadata field to validate.
  * @returns the validated hunks, or null when the payload is not usable.
  */
@@ -31,11 +35,12 @@ function narrowDiffs(diffs: unknown): DiffHunk[] | null {
   const out: DiffHunk[] = []
   for (const hunk of diffs) {
     if (typeof hunk !== 'object' || hunk === null) return null
-    const { path, oldText, newText } = hunk as Record<string, unknown>
+    const { path, oldText, newText, truncated } = hunk as Record<string, unknown>
     if (typeof path !== 'string') return null
     if (oldText !== null && typeof oldText !== 'string') return null
     if (typeof newText !== 'string') return null
-    out.push({ path, oldText, newText })
+    if (truncated !== undefined && typeof truncated !== 'boolean') return null
+    out.push(truncated === true ? { path, oldText, newText, truncated } : { path, oldText, newText })
   }
   return out
 }
@@ -89,18 +94,48 @@ function appliedDiffs(meta: unknown): DiffHunk[] | 'empty' | null {
 }
 
 /**
+ * Present the applied hunks another tool recorded under the `meta.diffs`
+ * convention of `write`/`edit`, such as an external `apply_patch`. Hunks of one
+ * file stay together in first-seen file order, so the card draws one section
+ * per file, and recorded absolute paths display relative to the Session
+ * directory.
+ */
+function recordedCard(block: ToolCallBlock, cwd: string | undefined, home: string | undefined): DiffCardModel | null {
+  if (!('kind' in block) || block.isError) return null
+  const parsed = parsedToolCall(block)
+  if (parsed === null) return null
+  const applied = appliedDiffs(block.meta)
+  if (applied === null || applied === 'empty') return null
+  const files = new Map<string, DiffHunk[]>()
+  for (const diff of applied) {
+    const hunks = files.get(diff.path)
+    if (hunks === undefined) files.set(diff.path, [diff])
+    else hunks.push(diff)
+  }
+  const diffs = [...files].flatMap(([path, hunks]) => {
+    const label = abbreviateHomePath(relativizeToCwd(path, cwd), home)
+    return hunks.map(hunk => ({ ...hunk, path: label }))
+  })
+  return parsed.args.dry_run === true ? { card: { diffs }, dryRun: true } : { card: { diffs } }
+}
+
+/**
  * Derive running diffs for root write/edit and `str_replace_editor`
  * create/replace calls, plus applied settled diffs for root write/edit calls.
  * A successful write with valid empty metadata uses its argument-derived
  * whole-file diff, matching create and identical-overwrite presentation;
  * `str_replace_editor` settles through Generic because it has no result view.
+ * Any other successful root call whose result metadata carries valid,
+ * non-empty `diffs` settles to those recorded hunks; while it runs it stays generic.
  * @param block - running or settled Tool block.
+ * @param cwd - Session directory; recorded hunk paths of other tools display relative to it.
+ * @param home - host account home; a recorded path outside `cwd` under it displays as `~/…`.
  * @returns the diff-card props, or null for the generic path.
  */
-export function diffCardModel(block: ToolCallBlock): DiffCardModel | null {
+export function diffCardModel(block: ToolCallBlock, cwd?: string, home?: string): DiffCardModel | null {
   if (block.parentCallId !== undefined) return null
   const intended = intendedDiff(block)
-  if (intended === null) return null
+  if (intended === null) return recordedCard(block, cwd, home)
   if (!('kind' in block)) return { card: { diffs: [intended.diff] } }
   if (intended.tool === 'str_replace_editor') return null
   if (block.isError) return null

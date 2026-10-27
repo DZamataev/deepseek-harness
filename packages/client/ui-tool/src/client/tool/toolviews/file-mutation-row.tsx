@@ -32,7 +32,7 @@ function contentKilobytes(block: FileMutationRowProps['block']): number | null {
  */
 export function FileMutationRow({ toolName, block, cwd, home, openFile, inspect, useDisclosure, t }: FileMutationRowProps) {
   const model = toolRowModel(toolName, block, cwd, home)
-  const diff = diffCardModel(block)
+  const diff = diffCardModel(block, cwd, home)
   const kilobytes = contentKilobytes(block)
   const size = kilobytes === null ? null : t('tool.preparing.content', { kilobytes })
   return (

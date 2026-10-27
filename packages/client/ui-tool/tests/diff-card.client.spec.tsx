@@ -360,3 +360,111 @@ describe('fileMutationToolview registration', () => {
     expect(registered.every(r => r.disposed)).toBe(true)
   })
 })
+
+describe('recorded diffs of other tools (apply_patch)', () => {
+  const CWD = '/w/fixture'
+  // Recorded `@local/dsh-apply-patch` 1.1.12 call: one Update File hunk and one Delete File.
+  const INPUT = '*** Begin Patch\n*** Update File: greet.js\n@@\n export function greet(name) {\n-  return "Hello, " + name;\n+  return `Hello, ${name}!`;\n }\n*** Delete File: old.txt\n*** End Patch'
+  const RESULT = 'Applied patch: 0 added, 1 modified, 1 deleted.\nM greet.js\nD old.txt'
+  const GREET = {
+    path: '/w/fixture/greet.js',
+    oldText: 'export function greet(name) {\n  return "Hello, " + name;\n}',
+    newText: 'export function greet(name) {\n  return `Hello, ${name}!`;\n}',
+  }
+  const OLD = { path: '/w/fixture/old.txt', oldText: 'obsolete', newText: '' }
+  const patchArgs = (fields: Record<string, unknown> = {}) => JSON.stringify({ input: INPUT, ...fields })
+  const patch = (over?: Partial<ToolResultNode>, args = patchArgs()) => settled({
+    name: 'apply_patch', call: { name: 'apply_patch', argsRaw: args },
+    args: PartialArguments.fromText(args),
+    content: [{ type: 'text', text: RESULT }],
+    meta: { diffs: [GREET, OLD] },
+    ...over,
+  })
+  const card = (block: StartedToolCall | ToolResultNode) => render(<GenericToolCard {...{
+    useDisclosure, callId: 'c1', toolName: 'apply_patch', openFile: vi.fn(), cwd: CWD,
+    loadImage: vi.fn(() => Promise.reject(new Error('not used'))), t,
+    ...('kind' in block ? { phase: 'result' as const, block } : { phase: block.phase, block }),
+  }} />)
+  const lines = (container: HTMLElement) => [...container.querySelectorAll('[data-diff] [class*="_line_"]')].map(row => row.textContent)
+
+  it('settles to the recorded hunks with paths relative to the Session directory', () => {
+    expect(diffCardModel(patch(), CWD)).toEqual({
+      card: { diffs: [{ ...GREET, path: 'greet.js' }, { ...OLD, path: 'old.txt' }] },
+    })
+  })
+
+  it('keeps each file\'s hunks together and passes truncated hunks through', () => {
+    const second = { path: '/w/fixture/greet.js', oldText: 'a', newText: 'b' }
+    const large = { path: '/w/fixture/big.txt', oldText: '', newText: '', truncated: true }
+    expect(diffCardModel(patch({ meta: { diffs: [GREET, OLD, second, large] } }), CWD)?.card.diffs.map(diff => diff.path))
+      .toEqual(['greet.js', 'greet.js', 'old.txt', 'big.txt'])
+    expect(diffCardModel(patch({ meta: { diffs: [large] } }), CWD)).toEqual({
+      card: { diffs: [{ ...large, path: 'big.txt' }] },
+    })
+  })
+
+  it('marks a dry run', () => {
+    expect(diffCardModel(patch(undefined, patchArgs({ dry_run: true })), CWD)?.dryRun).toBe(true)
+    expect(diffCardModel(patch(undefined, patchArgs({ dry_run: false })), CWD)).not.toHaveProperty('dryRun')
+  })
+
+  it('stays generic while running, on errors, without a call, and for absent or malformed metadata', () => {
+    const argsRaw = patchArgs()
+    expect(diffCardModel(running({ name: 'apply_patch', argsRaw }), CWD)).toBeNull()
+    expect(diffCardModel(patch({ isError: true }), CWD)).toBeNull()
+    expect(diffCardModel(patch({ call: null }), CWD)).toBeNull()
+    expect(diffCardModel(patch({ meta: { diffs: [] } }), CWD)).toBeNull()
+    expect(diffCardModel(patch({ meta: undefined }), CWD)).toBeNull()
+    expect(diffCardModel(patch({ meta: { diffs: [{ ...OLD, truncated: 'yes' }] } }), CWD)).toBeNull()
+  })
+
+  it('renders an Apply patch row listing the files, with totals and the diff card', () => {
+    const view = card(patch())
+    const row = view.container.querySelector('[data-disclosure-row]')?.textContent
+    expect(row).toContain('应用补丁')
+    expect(row).toContain('greet.js, old.txt')
+    expect(row).toContain('+1 -2')
+    fireEvent.click(view.container.querySelector('[data-expandable]')!)
+    expect(lines(view.container)).toEqual([
+      'greet.js', 'export function greet(name) {', '  return "Hello, " + name;', '  return `Hello, ${name}!`;', '}',
+      'old.txt', 'obsolete',
+    ])
+    expect(view.queryByText(/Applied patch/)).toBeNull()
+  })
+
+  it('labels a dry run and draws a truncated hunk as a notice', () => {
+    const view = card(patch({
+      meta: { diffs: [{ path: '/w/fixture/big.txt', oldText: null, newText: '', truncated: true }] },
+    }, patchArgs({ dry_run: true })))
+    expect(view.container.querySelector('[data-disclosure-row]')?.textContent).toContain('试运行')
+    fireEvent.click(view.container.querySelector('[data-expandable]')!)
+    expect(lines(view.container)).toEqual(['big.txt', zh['diff.tooLarge']])
+  })
+
+  it('lists the patched files of a running call and expands to its arguments', () => {
+    const view = card(running({ name: 'apply_patch', argsRaw: patchArgs() }))
+    expect(view.container.querySelector('[data-disclosure-row]')?.textContent).toContain('greet.js, old.txt')
+    fireEvent.click(view.container.querySelector('[data-expandable]')!)
+    expect(view.container.querySelector('[data-diff]')).toBeNull()
+  })
+
+  it('names moved, created, and deleted files from Codex and unified headers', () => {
+    const codex = '*** Begin Patch\n*** Update File: a.js\n*** Move to: /w/fixture/lib/b.js\n*** Add File: c.js\n+x\n*** End Patch'
+    const unified = 'diff --git a/d.js b/d.js\ndeleted file mode 100644\n--- a/d.js\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\n--- a/e.js\t2026-10-27\n+++ b/e.js\t2026-10-27\n@@ -1 +1 @@\n-y\n+z\n'
+    expect(card(running({ name: 'apply_patch', argsRaw: JSON.stringify({ input: codex }) }))
+      .container.querySelector('[data-disclosure-row]')?.textContent).toContain('lib/b.js, c.js')
+    cleanup()
+    expect(card(running({ name: 'apply_patch', argsRaw: JSON.stringify({ input: unified }) }))
+      .container.querySelector('[data-disclosure-row]')?.textContent).toContain('d.js, e.js')
+  })
+
+  it('keeps the error text of a failed patch', () => {
+    const view = card(patch({
+      isError: true,
+      content: [{ type: 'text', text: 'PATCH_CONFLICT: greet.js: the change does not match the file' }],
+      error: { name: 'PatchError', code: 'PATCH_CONFLICT' },
+    }))
+    expect(view.container.querySelector('[data-diff]')).toBeNull()
+    expect(view.container.querySelector('[class*="_errorSummary_"]')?.textContent).toContain('PATCH_CONFLICT')
+  })
+})
